@@ -7,7 +7,7 @@ assumptions, and [`PROGRESS.md`](PROGRESS.md) for what has been built.
 
 ## Status
 
-**Phase 1, slice 1.1 (skeleton) is done.** What works now:
+**Phase 1: slices 1.1 (skeleton) and 1.2 (identity) are done.** What works now:
 
 - Multi-module Maven build (`./mvnw`), JDK 21, virtual threads.
 - `cadence-api` boots. It has Flyway (outbox + processed-event tables), `/actuator/health`, Swagger UI,
@@ -15,7 +15,10 @@ assumptions, and [`PROGRESS.md`](PROGRESS.md) for what has been built.
   creates every topic from spec 3.4 at startup.
 - `cadence-transcoder` boots and consumes `catalog.track-uploaded`. It's a stub that only logs; FFmpeg comes in slice 1.4.
 - `cadence-events` holds the shared `EventEnvelope` (spec 3.5), topic names, its JSON Schema and the Jackson settings.
-- Not built yet: identity, catalog, uploads, playback, library and seed data (slices 1.2–1.6).
+- **Identity:** register, login (rate-limited to 5 per minute per IP), refresh-token rotation with reuse
+  detection, logout, `GET/PATCH /api/v1/me`, RS256 JWTs (15 min) with public keys at `/.well-known/jwks.json`.
+  The admin is created at startup from `CADENCE_ADMIN_EMAIL`/`CADENCE_ADMIN_PASSWORD`, and every `/api/v1/admin/**` route requires ADMIN.
+- Not built yet: catalog, uploads, playback, library and seed data (slices 1.3–1.6).
 
 ## Prerequisites
 
@@ -27,6 +30,8 @@ assumptions, and [`PROGRESS.md`](PROGRESS.md) for what has been built.
 ## Run it
 
 ```bash
+make toolchains        # once per machine: register JDK 21 for Maven
+make keys              # once: generate the dev JWT key pair in secrets/ (git-ignored)
 make up                # creates .env from .env.example if missing, starts infra, waits until healthy
 make run-api           # http://localhost:8080  (Swagger UI: /swagger-ui.html, health: /actuator/health)
 make run-transcoder    # http://localhost:8081/actuator/health
@@ -52,7 +57,16 @@ the Spring apps read `.env`, which is git-ignored.
 make test              # = ./mvnw verify : unit tests (*Test) + Testcontainers integration tests (*IT)
 ```
 
-Integration tests start their own Postgres and Kafka containers, so they don't need `make up`.
+Integration tests start their own Postgres, Kafka and Redis containers, so they don't need `make up`.
+
+### Try the auth API
+
+```bash
+curl -s -XPOST localhost:8080/api/v1/auth/register -H 'Content-Type: application/json' \
+  -d '{"email":"me@example.com","password":"a-long-password","displayName":"Me"}'
+# → {"accessToken":"…","refreshToken":"…","expiresIn":900,"tokenType":"Bearer"}
+curl -s localhost:8080/api/v1/me -H "Authorization: Bearer <accessToken>"
+```
 
 ## Layout
 

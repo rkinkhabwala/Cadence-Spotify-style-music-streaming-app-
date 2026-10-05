@@ -38,12 +38,19 @@ spring:
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
   mvc:
     problemdetails:
       enabled: true
 
 server:
   port: ${CADENCE_API_PORT:8080}
+  # trust X-Forwarded-For only from internal proxies (Tomcat RemoteIpValve defaults: loopback, private ranges)
+  forward-headers-strategy: native
 
 management:
   endpoints:
@@ -62,6 +69,21 @@ springdoc:
     path: /v3/api-docs
 
 cadence:
+  security:
+    jwt:
+      # PEM files from scripts/generate-dev-keys.sh; paths are relative to the repo root (the working directory)
+      private-key-location: ${CADENCE_JWT_PRIVATE_KEY_LOCATION:file:secrets/jwt-private.pem}
+      public-key-location: ${CADENCE_JWT_PUBLIC_KEY_LOCATION:file:secrets/jwt-public.pem}
+      issuer: ${CADENCE_JWT_ISSUER:cadence}
+      access-token-ttl: 15m
+      refresh-token-ttl: 30d
+  admin:
+    email: ${CADENCE_ADMIN_EMAIL:}
+    password: ${CADENCE_ADMIN_PASSWORD:}
+  rate-limits:
+    login:
+      capacity: 5
+      period: 1m
   outbox:
     poll-interval: ${CADENCE_OUTBOX_POLL_INTERVAL:500ms}
     batch-size: 100

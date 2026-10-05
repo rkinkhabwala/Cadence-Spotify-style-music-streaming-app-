@@ -9,6 +9,9 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -31,7 +34,31 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(CadenceException.class)
     ResponseEntity<ProblemDetail> handleCadence(CadenceException ex) {
-        return ResponseEntity.status(ex.status()).body(Problems.of(ex.status(), ex.code(), ex.getMessage()));
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(ex.status());
+        if (ex instanceof TooManyRequestsException tooMany) {
+            response.header(HttpHeaders.RETRY_AFTER, Long.toString(tooMany.retryAfterSeconds()));
+        }
+        return response.body(Problems.of(ex.status(), ex.code(), ex.getMessage()));
+    }
+
+    /** Thrown by method security ({@code @PreAuthorize}) inside controllers. */
+    @ExceptionHandler(AccessDeniedException.class)
+    ResponseEntity<ProblemDetail> handleAccessDenied(AccessDeniedException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(Problems.of(HttpStatus.FORBIDDEN, "forbidden", "You are not allowed to perform this action"));
+    }
+
+    @ExceptionHandler(AuthenticationException.class)
+    ResponseEntity<ProblemDetail> handleAuthentication(AuthenticationException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(Problems.of(HttpStatus.UNAUTHORIZED, "unauthorized", "Authentication is required"));
+    }
+
+    /** Concurrent JPA update of a versioned entity. */
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    ResponseEntity<ProblemDetail> handleOptimisticLock(ObjectOptimisticLockingFailureException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Problems.of(HttpStatus.CONFLICT,
+                "concurrent-modification", "The resource was modified concurrently; reload and retry"));
     }
 
     @ExceptionHandler(ConstraintViolationException.class)

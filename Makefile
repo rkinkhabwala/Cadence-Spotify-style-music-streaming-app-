@@ -6,13 +6,16 @@ export JAVA_HOME
 COMPOSE := docker compose
 INFRA := postgres redis kafka minio kafka-ui
 
-.PHONY: help env toolchains up down logs ps seed test build run-api run-transcoder clean
+.PHONY: help env keys toolchains up down logs ps seed test build run-api run-transcoder clean
 
 help: ## Show targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-16s %s\n", $$1, $$2}'
 
 env: ## Create .env from .env.example if missing
 	@[ -f .env ] || { cp .env.example .env && echo "Created .env from .env.example"; }
+
+keys: ## Generate the dev RS256 JWT key pair in secrets/ (never committed)
+	./scripts/generate-dev-keys.sh
 
 toolchains: ## Register JDK 21 in ~/.m2/toolchains.xml (once per machine)
 	./scripts/setup-toolchains.sh
@@ -39,7 +42,7 @@ test: ## Build and run all unit + Testcontainers integration tests
 build: ## Compile and package without tests
 	./mvnw -B -DskipTests package
 
-run-api: env ## Run cadence-api on the host (needs `make up`)
+run-api: env keys ## Run cadence-api on the host (needs `make up`)
 	./mvnw -pl cadence-api -am -DskipTests install -q && ./mvnw -pl cadence-api spring-boot:run
 
 run-transcoder: env ## Run cadence-transcoder on the host (needs `make up`)

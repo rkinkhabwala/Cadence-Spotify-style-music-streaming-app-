@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Size;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
@@ -21,10 +22,12 @@ import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(controllers = GlobalExceptionHandlerTest.ProblemController.class)
+@AutoConfigureMockMvc(addFilters = false)
 @Import(GlobalExceptionHandlerTest.ProblemController.class)
 class GlobalExceptionHandlerTest {
 
@@ -45,6 +48,16 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/conflict")
         void conflict() {
             throw new ConflictException("email-taken", "Email already registered");
+        }
+
+        @GetMapping("/test/throttled")
+        void throttled() {
+            throw new TooManyRequestsException("rate-limited", "Slow down", 42);
+        }
+
+        @GetMapping("/test/denied")
+        void denied() {
+            throw new org.springframework.security.access.AccessDeniedException("no");
         }
 
         @GetMapping("/test/stale")
@@ -88,6 +101,21 @@ class GlobalExceptionHandlerTest {
         mvc.perform(get("/test/stale"))
                 .andExpect(status().isPreconditionFailed())
                 .andExpect(jsonPath("$.code").value("version-mismatch"));
+    }
+
+    @Test
+    void tooManyRequestsCarriesRetryAfter() throws Exception {
+        mvc.perform(get("/test/throttled"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Retry-After", "42"))
+                .andExpect(jsonPath("$.code").value("rate-limited"));
+    }
+
+    @Test
+    void methodSecurityDenialIsA403() throws Exception {
+        mvc.perform(get("/test/denied"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("forbidden"));
     }
 
     @Test
