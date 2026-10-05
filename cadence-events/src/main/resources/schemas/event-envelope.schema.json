@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cadence.dev/schemas/event-envelope.schema.json",
+  "title": "Cadence event envelope",
+  "description": "Shared envelope for every Kafka event (spec 3.5). Consumed by Cadence and the recommender.",
+  "type": "object",
+  "required": ["eventId", "eventType", "occurredAt", "itemType", "itemId", "payload"],
+  "properties": {
+    "eventId": { "type": "string", "format": "uuid", "description": "Unique id (UUIDv7); consumers dedupe on it" },
+    "eventType": { "type": "string", "examples": ["track-played", "track-liked", "artist-followed", "entity-changed"] },
+    "occurredAt": { "type": "string", "format": "date-time", "description": "ISO-8601 UTC instant" },
+    "userId": { "type": ["string", "null"], "format": "uuid" },
+    "itemType": { "type": "string", "enum": ["song", "artist", "album", "playlist"] },
+    "itemId": { "type": "string", "format": "uuid" },
+    "payload": { "type": "object" }
+  },
+  "additionalProperties": false
+}

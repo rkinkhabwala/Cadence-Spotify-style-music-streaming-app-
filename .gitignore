@@ -1,0 +1,25 @@
+# Build
+target/
+!.mvn/wrapper/maven-wrapper.jar
+*.class
+
+# Local config & secrets
+.env
+*.pem
+*.key
+secrets/
+
+# IDE / OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Node (Phase 2)
+node_modules/
+dist/
+
+# Logs / scratch
+*.log
+seed-audio/*
+!seed-audio/.gitkeep
