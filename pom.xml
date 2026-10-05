@@ -34,6 +34,7 @@
         <bucket4j.version>8.21.0</bucket4j.version>
         <aws-sdk.version>2.55.11</aws-sdk.version>
         <resilience4j.version>2.4.0</resilience4j.version>
+        <wiremock.version>3.13.2</wiremock.version>
 
         <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
         <maven-surefire-plugin.version>3.5.3</maven-surefire-plugin.version>
@@ -107,6 +108,12 @@
                 <groupId>com.bucket4j</groupId>
                 <artifactId>bucket4j_jdk17-lettuce</artifactId>
                 <version>${bucket4j.version}</version>
+            </dependency>
+            <!-- test: stub of the recommender's HTTP contract (D92); standalone = shaded Jetty, no clash with Boot -->
+            <dependency>
+                <groupId>org.wiremock</groupId>
+                <artifactId>wiremock-standalone</artifactId>
+                <version>${wiremock.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

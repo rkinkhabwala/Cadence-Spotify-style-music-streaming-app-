@@ -47,4 +47,17 @@ public class TrackStatsStore {
                         rs.getLong("unique_listeners_30d")))
                 .list();
     }
+
+    /** 30-day counted plays of the given tracks; tracks without plays are absent. */
+    public java.util.Map<UUID, Long> plays30d(java.util.Collection<UUID> trackIds) {
+        if (trackIds.isEmpty()) {
+            return java.util.Map.of();
+        }
+        java.util.Map<UUID, Long> plays = new java.util.HashMap<>();
+        jdbc.sql("SELECT track_id, plays_30d FROM track_stats WHERE track_id IN (:ids)")
+                .param("ids", trackIds)
+                .query((rs, i) -> plays.put(rs.getObject("track_id", UUID.class), rs.getLong("plays_30d")))
+                .list();
+        return plays;
+    }
 }

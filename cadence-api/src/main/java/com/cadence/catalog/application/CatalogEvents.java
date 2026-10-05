@@ -81,6 +81,14 @@ class CatalogEvents {
         }
     }
 
+    /**
+     * Re-publishes tracks after a change to their album or an artist they credit, so every track event carries
+     * current names and genres (the recommender reads tracks only; D88).
+     */
+    void tracksChanged(List<TrackSnapshot> tracks) {
+        tracks.forEach(t -> entityChanged(ItemTypes.SONG, t.id(), Action.UPDATED, t));
+    }
+
     /** {@code catalog.track-uploaded}; the event id is the transcode job id. */
     void trackUploaded(UUID trackId, UUID jobId, TrackUploadedPayload payload) {
         outbox.append(Topics.CATALOG_TRACK_UPLOADED, trackId.toString(), EventEnvelope.create(jobId,

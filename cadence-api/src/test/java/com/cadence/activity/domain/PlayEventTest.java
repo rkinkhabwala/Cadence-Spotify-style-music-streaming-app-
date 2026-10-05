@@ -64,10 +64,22 @@ class PlayEventTest {
     @Test
     void payloadCarriesThePlaybackState() {
         PlayEvent play = play(31_000);
-        var payload = play.toPayload();
+        var payload = play.toPayload(200_000);
         assertThat(payload.playId()).isEqualTo(play.getId());
         assertThat(payload.msPlayed()).isEqualTo(31_000);
         assertThat(payload.source()).isEqualTo("ALBUM");
+        assertThat(payload.durationMs()).isEqualTo(200_000);
         assertThat(payload.isStream()).isTrue();
+    }
+
+    @Test
+    void recommendationContextIsKeptOnlyWithARecommendationId() {
+        var fromShelf = play(31_000).withContext("tab-1", "rec-1", 4).toPayload(null);
+        var elsewhere = play(31_000).withContext("tab-1", null, 4).toPayload(null);
+
+        assertThat(fromShelf.sessionId()).isEqualTo("tab-1");
+        assertThat(fromShelf.recommendationId()).isEqualTo("rec-1");
+        assertThat(fromShelf.position()).isEqualTo(4);
+        assertThat(elsewhere.position()).isNull();
     }
 }

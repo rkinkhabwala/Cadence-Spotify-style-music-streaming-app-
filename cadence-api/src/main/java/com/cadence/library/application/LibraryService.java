@@ -8,6 +8,7 @@ import com.cadence.common.error.NotFoundException;
 import com.cadence.common.pagination.Cursor;
 import com.cadence.common.pagination.CursorPage;
 import com.cadence.common.pagination.CursorRequest;
+import com.cadence.library.LibraryQueries;
 import com.cadence.library.application.LibraryViews.FollowedArtistView;
 import com.cadence.library.application.LibraryViews.LikedTrackView;
 import com.cadence.library.application.LibraryViews.SavedAlbumView;
@@ -29,7 +30,7 @@ import java.util.UUID;
 
 /** Likes, follows and saved albums. All writes are idempotent; events fire only on actual state changes. */
 @Service
-public class LibraryService {
+public class LibraryService implements LibraryQueries {
 
     private final LikedTrackRepository likes;
     private final FollowedArtistRepository follows;
@@ -131,5 +132,11 @@ public class LibraryService {
         CursorPage<SavedAlbum> result = CursorPage.of(rows, page, s -> Cursor.of(s.getSavedAt(), s.getAlbumId()));
         Map<UUID, AlbumRef> albums = catalog.findAlbums(result.items().stream().map(SavedAlbum::getAlbumId).toList());
         return result.map(s -> new SavedAlbumView(albums.get(s.getAlbumId()), s.getSavedAt()));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public java.util.Set<UUID> likedAmong(UUID userId, java.util.Collection<UUID> trackIds) {
+        return trackIds.isEmpty() ? java.util.Set.of() : java.util.Set.copyOf(likes.findLikedAmong(userId, trackIds));
     }
 }

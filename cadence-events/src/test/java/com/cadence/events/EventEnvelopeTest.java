@@ -91,4 +91,20 @@ class EventEnvelopeTest {
         assertThat(schemaProperties).isEqualTo(recordComponents);
         assertThat(required).containsExactlyInAnyOrder("eventId", "eventType", "occurredAt", "itemType", "itemId", "payload");
     }
+
+    @Test
+    void trackPlayedPayloadSchemaMatchesTheRecord() throws Exception {
+        JsonNode schema;
+        try (InputStream in = getClass().getResourceAsStream("/schemas/event-envelope.schema.json")) {
+            schema = mapper.readTree(in);
+        }
+        Set<String> schemaProperties = new HashSet<>();
+        schema.at("/$defs/trackPlayedPayload/properties").fieldNames().forEachRemaining(schemaProperties::add);
+        JsonNode serialized = mapper.valueToTree(new TrackPlayedPayload(UuidV7.generate(), 1, false, false, "OTHER",
+                null, null, null, null, null));
+        Set<String> jsonFields = new HashSet<>();
+        serialized.fieldNames().forEachRemaining(jsonFields::add);
+
+        assertThat(schemaProperties).isEqualTo(jsonFields);
+    }
 }

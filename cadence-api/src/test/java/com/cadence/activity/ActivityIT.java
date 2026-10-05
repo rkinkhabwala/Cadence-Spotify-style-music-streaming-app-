@@ -179,7 +179,7 @@ class ActivityIT extends IntegrationTest {
     }
 
     @Test
-    void homeHasRecentTopPopularAndNewReleaseShelves() {
+    void homeHasRecentRecommendedTopPopularAndNewReleaseShelves() {
         UUID hit = ready("Home Hit");
         UUID other = ready("Home Other");
         UUID futureAlbum = catalog.album(catalog.artist("Future Artist"), "Not Out Yet", LocalDate.now().plusYears(1));
@@ -200,8 +200,10 @@ class ActivityIT extends IntegrationTest {
         Map<String, JsonNode> shelves = new HashMap<>();
         home.get("shelves").forEach(s -> shelves.put(s.get("id").asText(), s));
 
-        assertThat(home.get("shelves")).extracting(s -> s.get("id").asText())
-                .containsExactly("recently-played", "top-tracks", "popular", "new-releases");
+        assertThat(home.get("shelves")).extracting(s -> s.get("id").asText()).containsExactly("recently-played",
+                "made-for-you", "because-you-listened", "top-tracks", "popular", "new-releases");
+        assertThat(shelves.get("made-for-you").get("source").asText()).as("recommender off by default").isEqualTo("fallback");
+        assertThat(shelves.get("because-you-listened").get("title").asText()).isEqualTo("Because you listened to Home Hit");
         assertThat(shelves.get("recently-played").at("/items/0/type").asText()).isEqualTo("track");
         assertThat(shelves.get("recently-played").at("/items/0/track/id").asText()).isEqualTo(hit.toString());
         assertThat(shelves.get("top-tracks").at("/items/0/track/id").asText()).isEqualTo(hit.toString());
@@ -212,7 +214,8 @@ class ActivityIT extends IntegrationTest {
         assertThat(shelves.get("new-releases").at("/items/0/type").asText()).isEqualTo("album");
 
         JsonNode newcomer = api.get("/api/v1/home", api.register().accessToken()).getBody();
-        assertThat(newcomer.get("shelves")).extracting(s -> s.get("id").asText()).containsExactly("popular", "new-releases");
+        assertThat(newcomer.get("shelves")).extracting(s -> s.get("id").asText())
+                .containsExactly("made-for-you", "popular", "new-releases");
         assertThat(api.get("/api/v1/home", null).getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 

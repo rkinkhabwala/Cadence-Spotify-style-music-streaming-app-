@@ -2,7 +2,6 @@ package com.cadence.catalog.application;
 
 import com.cadence.catalog.CatalogRefs.ArtistRef;
 import com.cadence.catalog.CatalogReplay;
-import com.cadence.catalog.TrackSummary;
 import com.cadence.catalog.domain.Album;
 import com.cadence.catalog.domain.Artist;
 import com.cadence.catalog.infrastructure.AlbumRepository;
@@ -52,7 +51,7 @@ class CatalogReplayService implements CatalogReplay {
             events.entityChanged(ItemTypes.ALBUM, album.getId(), Action.UPDATED,
                     mapper.toView(album, new ArtistRef(artist.getId(), artist.getName())));
         }
-        List<TrackSummary> allTracks = summaries.of(tracks.findAll());
+        List<TrackSnapshot> allTracks = summaries.snapshots(tracks.findAll());
         allTracks.forEach(t -> events.entityChanged(ItemTypes.SONG, t.id(), Action.UPDATED, t));
         return allArtists.size() + allAlbums.size() + allTracks.size();
     }

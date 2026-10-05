@@ -24,6 +24,15 @@ public interface CatalogQueries {
     /** Released albums (release date today or earlier) with at least one READY track, newest first. */
     List<AlbumSummary> newReleases(int limit);
 
+    /** The genres of each track's album; tracks without genres (or unknown) are absent. */
+    Map<UUID, List<String>> genresOf(Collection<UUID> trackIds);
+
+    /** Ids of READY tracks by all-time play count, most played first. */
+    List<UUID> popularTrackIds(int limit);
+
+    /** Ids of READY tracks whose album has one of the genres (case-insensitive), by all-time play count. */
+    List<UUID> popularTrackIdsInGenres(Collection<String> genres, int limit);
+
     boolean artistExists(UUID artistId);
 
     boolean albumExists(UUID albumId);

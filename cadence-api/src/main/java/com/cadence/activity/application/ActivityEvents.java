@@ -23,9 +23,9 @@ class ActivityEvents {
         this.objectMapper = objectMapper;
     }
 
-    void trackPlayed(PlayEvent play, Instant at) {
+    void trackPlayed(PlayEvent play, Integer durationMs, Instant at) {
         outbox.append(Topics.ACTIVITY_TRACK_PLAYED, play.getUserId().toString(), EventEnvelope.create(
-                EventTypes.TRACK_PLAYED, at, play.getUserId(), ItemTypes.SONG, play.getTrackId(), play.toPayload(),
-                objectMapper));
+                EventTypes.TRACK_PLAYED, at, play.getUserId(), ItemTypes.SONG, play.getTrackId(),
+                play.toPayload(durationMs), objectMapper));
     }
 }

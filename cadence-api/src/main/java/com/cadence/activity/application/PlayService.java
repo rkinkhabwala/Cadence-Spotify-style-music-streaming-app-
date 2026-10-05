@@ -24,8 +24,13 @@ import java.util.UUID;
 @Service
 public class PlayService {
 
+    /**
+     * @param sessionId        the client's listening session (optional)
+     * @param recommendationId the recommended list the track was played from (optional), with its 0-based slot
+     */
     public record ReportPlay(UUID playId, UUID trackId, int msPlayed, PlaySource source, UUID sourceId,
-                             boolean completed, boolean skipped) {
+                             boolean completed, boolean skipped, String sessionId, String recommendationId,
+                             Integer position) {
     }
 
     private final PlayEventRepository plays;
@@ -46,19 +51,20 @@ public class PlayService {
     /** Without a {@code playId} every call is a new playback (not idempotent); clients should always send one. */
     @Transactional
     public PlayView report(UUID userId, ReportPlay report) {
-        catalog.findTrack(report.trackId()).filter(TrackSummary::isPlayable)
+        TrackSummary track = catalog.findTrack(report.trackId()).filter(TrackSummary::isPlayable)
                 .orElseThrow(() -> new NotFoundException("Track", report.trackId()));
         Instant now = clock.instant();
         UUID playId = report.playId() != null ? report.playId() : UuidV7.generate();
         boolean created = plays.insertIfAbsent(new PlayEvent(playId, userId, report.trackId(), report.msPlayed(),
-                report.source(), report.sourceId(), report.completed(), report.skipped(), now)) == 1;
+                report.source(), report.sourceId(), report.completed(), report.skipped(), now)
+                .withContext(report.sessionId(), report.recommendationId(), report.position())) == 1;
         PlayEvent play = plays.lockById(playId).orElseThrow();
         boolean changed = created || play.report(userId, report.trackId(), report.msPlayed(), report.completed(),
                 report.skipped(), now);
         if (changed) {
             plays.flush();
             history.recordPlay(userId, play.getTrackId(), play.getStartedAt());
-            events.trackPlayed(play, now);
+            events.trackPlayed(play, track.durationMs(), now);
         }
         return new PlayView(play.getId(), play.getTrackId(), play.getMsPlayed(), play.isCompleted(), play.isSkipped(),
                 play.isCounted(), play.getStartedAt());

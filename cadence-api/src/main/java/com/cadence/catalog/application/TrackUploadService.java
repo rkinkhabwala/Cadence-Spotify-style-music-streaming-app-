@@ -107,7 +107,7 @@ public class TrackUploadService {
         String extension = track.getSourceKey().substring(track.getSourceKey().lastIndexOf('.') + 1);
         events.trackUploaded(track.getId(), jobId,
                 new TrackUploadedPayload(storage.rawBucket(), track.getSourceKey(), extension, source.sizeBytes()));
-        events.entityChanged(ItemTypes.SONG, track.getId(), Action.UPDATED, summaries.of(track));
+        events.entityChanged(ItemTypes.SONG, track.getId(), Action.UPDATED, summaries.snapshot(track));
     }
 
     private ObjectInfo verifySource(String key) {

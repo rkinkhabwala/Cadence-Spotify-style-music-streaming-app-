@@ -73,7 +73,7 @@ public class TrackAdminService {
         Track track = tracks.save(new Track(title, albumId, trackNumber, discNumber == null ? 1 : discNumber,
                 Boolean.TRUE.equals(explicit), isrc, resolved, clock.instant()));
         tracks.flush();
-        events.entityChanged(ItemTypes.SONG, track.getId(), Action.CREATED, summaries.of(track));
+        events.entityChanged(ItemTypes.SONG, track.getId(), Action.CREATED, summaries.snapshot(track));
         return mapper.toAdminView(track);
     }
 
@@ -84,7 +84,7 @@ public class TrackAdminService {
         track.update(title, trackNumber, discNumber, explicit, isrc, credits == null ? null : toCredits(credits),
                 clock.instant());
         tracks.flush();
-        events.entityChanged(ItemTypes.SONG, id, Action.UPDATED, summaries.of(track));
+        events.entityChanged(ItemTypes.SONG, id, Action.UPDATED, summaries.snapshot(track));
         return mapper.toAdminView(track);
     }
 

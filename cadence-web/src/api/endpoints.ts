@@ -44,7 +44,8 @@ export const api = {
   topTracks: (range: 'short' | 'medium' | 'long', limit = 50) =>
     request<Page<TopTrackItem>>(`/me/top/tracks${q({ range, limit })}`),
   reportPlay: (body: { playId: string; trackId: string; msPlayed: number; source: PlaySource; sourceId?: string | null;
-    completed: boolean; skipped: boolean }) => request<PlayView>('/activity/plays', { method: 'POST', body }),
+    completed: boolean; skipped: boolean; sessionId?: string; recommendationId?: string; position?: number }) =>
+    request<PlayView>('/activity/plays', { method: 'POST', body }),
 
   // streaming
   startPlayback: (trackId: string) => request<PlaybackStart>(`/playback/${trackId}`, { method: 'POST' }),

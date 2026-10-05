@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { PlayTracker, type PlayReport } from './tracker';
+import { PlayTracker, SESSION_ID, type PlayReport } from './tracker';
 
 function tracker() {
   const reports: PlayReport[] = [];
@@ -56,5 +56,20 @@ describe('PlayTracker', () => {
   it('generates a fresh playId per playback by default', () => {
     const send = vi.fn();
     expect(new PlayTracker('t', 'OTHER', null, send).playId).not.toBe(new PlayTracker('t', 'OTHER', null, send).playId);
+  });
+
+  it('sends the tab session on every report and the recommendation slot only for recommended tracks', () => {
+    const reports: PlayReport[] = [];
+    const recommended = new PlayTracker('t2', 'LIBRARY', null, (r) => reports.push(r), 'play-2',
+      { recommendationId: 'rec-9', position: 4 });
+    const plain = new PlayTracker('t3', 'ALBUM', 'al1', (r) => reports.push(r), 'play-3', { recommendationId: null, position: 4 });
+    play(recommended, 0, 31);
+    play(plain, 0, 31);
+
+    expect(reports[0]).toMatchObject({ sessionId: SESSION_ID, recommendationId: 'rec-9', position: 4 });
+    expect(reports[1].sessionId).toBe(SESSION_ID);
+    expect(reports[1]).not.toHaveProperty('recommendationId');
+    expect(reports[1]).not.toHaveProperty('position');
+    expect(SESSION_ID).toMatch(/^[0-9a-f-]{36}$/);
   });
 });

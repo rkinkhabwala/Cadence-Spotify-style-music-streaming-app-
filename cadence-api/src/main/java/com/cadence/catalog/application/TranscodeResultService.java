@@ -71,6 +71,6 @@ public class TranscodeResultService {
             return;
         }
         tracks.flush();
-        events.entityChanged(ItemTypes.SONG, track.getId(), Action.UPDATED, summaries.of(track));
+        events.entityChanged(ItemTypes.SONG, track.getId(), Action.UPDATED, summaries.snapshot(track));
     }
 }

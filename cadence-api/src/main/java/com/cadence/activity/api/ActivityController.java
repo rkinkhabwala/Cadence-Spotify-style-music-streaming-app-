@@ -18,6 +18,8 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -33,7 +35,10 @@ import java.util.UUID;
 class ActivityController {
 
     /**
-     * @param playId identifies one playback; send the same id for its 30-second and its completion/skip report
+     * @param playId           identifies one playback; send the same id for its 30-second and its completion/skip report
+     * @param sessionId        the client's listening session (e.g. one per app tab), passed on to the recommender
+     * @param recommendationId when played from a recommended list (home shelf, /me/recommendations): its id
+     * @param position         0-based slot of the track in that list
      */
     record ReportPlayRequest(
             UUID playId,
@@ -42,7 +47,10 @@ class ActivityController {
             @NotNull PlaySource source,
             UUID sourceId,
             Boolean completed,
-            Boolean skipped) {
+            Boolean skipped,
+            @Size(max = 128) @Pattern(regexp = "[A-Za-z0-9_.:-]+") String sessionId,
+            @Size(max = 64) @Pattern(regexp = "[A-Za-z0-9_.:-]+") String recommendationId,
+            @Min(0) @Max(1000) Integer position) {
     }
 
     private final PlayService plays;
@@ -60,7 +68,8 @@ class ActivityController {
                     + "Without playId every call is a separate playback.")
     PlayView report(CurrentUser user, @Valid @RequestBody ReportPlayRequest body) {
         return plays.report(user.id(), new ReportPlay(body.playId(), body.trackId(), body.msPlayed(), body.source(),
-                body.sourceId(), Boolean.TRUE.equals(body.completed()), Boolean.TRUE.equals(body.skipped())));
+                body.sourceId(), Boolean.TRUE.equals(body.completed()), Boolean.TRUE.equals(body.skipped()),
+                body.sessionId(), body.recommendationId(), body.position()));
     }
 
     @GetMapping("/me/recently-played")

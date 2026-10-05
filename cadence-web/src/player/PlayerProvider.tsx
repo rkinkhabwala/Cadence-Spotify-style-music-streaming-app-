@@ -177,7 +177,11 @@ export function PlayerProvider({ children, engine: injected }: { children: React
     if (!current) return;
     const serial = ++loadSerial.current;
     const context = model.queue.context;
-    tracker.current = new PlayTracker(current.track.id, context?.source ?? 'OTHER', context?.sourceId ?? null, report);
+    const recommended = !current.fromUpNext && context?.recommendationId
+      ? { recommendationId: context.recommendationId, position: context.positions?.[current.track.id] }
+      : {};
+    tracker.current = new PlayTracker(current.track.id, context?.source ?? 'OTHER', context?.sourceId ?? null, report,
+      undefined, recommended);
     setError(null);
     setLoading(true);
     setProgress({ position: 0, duration: (current.track.durationMs ?? 0) / 1000, buffered: 0 });

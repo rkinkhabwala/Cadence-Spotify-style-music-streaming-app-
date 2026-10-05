@@ -26,20 +26,49 @@ public final class ActivityViews {
     public record TopTrackItem(TrackSummary track, long plays) {
     }
 
-    /** A shelf item is a track or an album, named by {@code type}; the other field is omitted. */
+    /**
+     * A recommended track. {@code reason}: the recommender's reason code, or POPULAR_IN_YOUR_GENRES / POPULAR from the
+     * fallback. {@code position}: the slot in the recommender's list; send it back with the play report.
+     */
+    public record RecommendedTrack(TrackSummary track, String reason, int position) {
+    }
+
+    /**
+     * {@code source}: {@code recommender} or {@code fallback}. {@code recommendationId}: the recommender's id for this
+     * list (null from the fallback); send it with play reports for attribution. Not paginated: {@code nextCursor}
+     * is always null.
+     */
+    public record Recommendations(List<RecommendedTrack> items, String source, String recommendationId,
+                                  String nextCursor) {
+    }
+
+    /**
+     * A shelf item is a track or an album, named by {@code type}; the other field is omitted. {@code position} is set
+     * on recommended tracks (see {@link RecommendedTrack}).
+     */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record ShelfItem(String type, TrackSummary track, AlbumSummary album) {
+    public record ShelfItem(String type, TrackSummary track, AlbumSummary album, Integer position) {
 
         static ShelfItem of(TrackSummary track) {
-            return new ShelfItem("track", track, null);
+            return new ShelfItem("track", track, null, null);
         }
 
         static ShelfItem of(AlbumSummary album) {
-            return new ShelfItem("album", null, album);
+            return new ShelfItem("album", null, album, null);
+        }
+
+        static ShelfItem of(RecommendedTrack recommended) {
+            return new ShelfItem("track", recommended.track(), null, recommended.position());
         }
     }
 
-    public record Shelf(String id, String title, List<ShelfItem> items) {
+    /** {@code source} and {@code recommendationId} are set on recommendation shelves only. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record Shelf(String id, String title, List<ShelfItem> items, String source, String recommendationId) {
+
+        Shelf(String id, String title, List<ShelfItem> items) {
+            this(id, title, items, null, null);
+        }
     }
 
     /** Only non-empty shelves are returned, in display order. */

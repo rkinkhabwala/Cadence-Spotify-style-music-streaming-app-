@@ -34,10 +34,12 @@ public class AlbumAdminService {
     private final TrackRepository tracks;
     private final CatalogMapper mapper;
     private final CatalogEvents events;
+    private final TrackSummaries summaries;
     private final Clock clock;
 
     AlbumAdminService(AlbumRepository albums, ArtistRepository artists, GenreRepository genres, TrackRepository tracks,
-                      CatalogMapper mapper, CatalogEvents events, Clock clock) {
+                      CatalogMapper mapper, CatalogEvents events, TrackSummaries summaries, Clock clock) {
+        this.summaries = summaries;
         this.albums = albums;
         this.artists = artists;
         this.genres = genres;
@@ -69,6 +71,7 @@ public class AlbumAdminService {
         Artist artist = artists.getReferenceById(album.getArtistId());
         AlbumView view = mapper.toView(album, new ArtistRef(artist.getId(), artist.getName()));
         events.entityChanged(ItemTypes.ALBUM, id, Action.UPDATED, view);
+        events.tracksChanged(summaries.snapshots(tracks.findByAlbumId(id)));
         return view;
     }
 

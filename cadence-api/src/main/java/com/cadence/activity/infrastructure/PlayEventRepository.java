@@ -19,9 +19,10 @@ public interface PlayEventRepository extends JpaRepository<PlayEvent, UUID> {
     @Modifying(flushAutomatically = true)
     @Query(nativeQuery = true, value = """
             INSERT INTO play_events (id, user_id, track_id, started_at, ms_played, source, source_id, completed, skipped,
-                                     counted_at, updated_at)
+                                     counted_at, updated_at, session_id, recommendation_id, rec_position)
             VALUES (:#{#p.id}, :#{#p.userId}, :#{#p.trackId}, :#{#p.startedAt}, :#{#p.msPlayed}, :#{#p.source.name()},
-                    :#{#p.sourceId}, :#{#p.completed}, :#{#p.skipped}, :#{#p.countedAt}, :#{#p.updatedAt})
+                    :#{#p.sourceId}, :#{#p.completed}, :#{#p.skipped}, :#{#p.countedAt}, :#{#p.updatedAt},
+                    :#{#p.sessionId}, :#{#p.recommendationId}, :#{#p.recPosition})
             ON CONFLICT (id) DO NOTHING
             """)
     int insertIfAbsent(@Param("p") PlayEvent play);

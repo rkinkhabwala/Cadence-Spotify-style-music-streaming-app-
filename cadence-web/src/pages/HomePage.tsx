@@ -35,7 +35,13 @@ function TrackCard({ track, tracks, index, context }: { track: TrackSummary; tra
 
 function ShelfRow({ shelf }: { shelf: Shelf }) {
   const tracks = shelf.items.flatMap((i) => (i.type === 'track' ? [i.track] : []));
-  const context: QueueContext = { source: shelf.id === 'popular' ? 'OTHER' : 'LIBRARY', sourceId: null, label: shelf.title, href: '/' };
+  const context: QueueContext = {
+    source: shelf.id === 'popular' ? 'OTHER' : 'LIBRARY', sourceId: null, label: shelf.title, href: '/',
+    ...(shelf.recommendationId ? {
+      recommendationId: shelf.recommendationId,
+      positions: Object.fromEntries(shelf.items.flatMap((i) => (i.type === 'track' && i.position != null ? [[i.track.id, i.position]] : []))),
+    } : {}),
+  };
   return (
     <Section title={shelf.title}>
       <div className="shelf">

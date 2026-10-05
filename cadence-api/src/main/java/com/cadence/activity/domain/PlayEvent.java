@@ -2,6 +2,7 @@ package com.cadence.activity.domain;
 
 import com.cadence.common.error.ConflictException;
 import com.cadence.events.TrackPlayedPayload;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -34,6 +35,10 @@ public class PlayEvent {
     private boolean skipped;
     private Instant countedAt;
     private Instant updatedAt;
+    private String sessionId;
+    private String recommendationId;
+    @Column(name = "rec_position")
+    private Integer recPosition;
 
     protected PlayEvent() {
     }
@@ -52,6 +57,16 @@ public class PlayEvent {
         this.skipped = skipped;
         this.countedAt = msPlayed >= TrackPlayedPayload.STREAM_THRESHOLD_MS ? now : null;
         this.updatedAt = now;
+    }
+
+    /**
+     * Where the playback came from, for the recommender (D88). Set on the first report; later reports can't change it.
+     */
+    public PlayEvent withContext(String sessionId, String recommendationId, Integer position) {
+        this.sessionId = sessionId;
+        this.recommendationId = recommendationId;
+        this.recPosition = recommendationId == null ? null : position;
+        return this;
     }
 
     /**
@@ -87,8 +102,10 @@ public class PlayEvent {
         return changed;
     }
 
-    public TrackPlayedPayload toPayload() {
-        return new TrackPlayedPayload(id, msPlayed, completed, skipped, source.name(), sourceId);
+    /** @param durationMs the track's duration (from the catalog), so consumers can compute completion % */
+    public TrackPlayedPayload toPayload(Integer durationMs) {
+        return new TrackPlayedPayload(id, msPlayed, completed, skipped, source.name(), sourceId, durationMs, sessionId,
+                recommendationId, recPosition);
     }
 
     public boolean isCounted() {
@@ -137,5 +154,17 @@ public class PlayEvent {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public String getSessionId() {
+        return sessionId;
+    }
+
+    public String getRecommendationId() {
+        return recommendationId;
+    }
+
+    public Integer getRecPosition() {
+        return recPosition;
     }
 }

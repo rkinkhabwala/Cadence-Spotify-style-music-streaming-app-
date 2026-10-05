@@ -188,6 +188,8 @@ services:
       REDIS_PORT: "6379"
       CADENCE_S3_ENDPOINT: http://minio:9000
       CADENCE_ELASTICSEARCH_URIS: http://elasticsearch:9200
+      # the recommender joins cadence-net (INTEGRATION.md)
+      CADENCE_RECOMMENDER_BASE_URL: ${CADENCE_RECOMMENDER_INTERNAL_URL:-http://recommendation-api:8080}
       CADENCE_S3_PUBLIC_ENDPOINT: ${CADENCE_S3_PUBLIC_ENDPOINT:-http://localhost:9000}
       CADENCE_JWT_PRIVATE_KEY_LOCATION: file:/app/secrets/jwt-private.pem
       CADENCE_JWT_PUBLIC_KEY_LOCATION: file:/app/secrets/jwt-public.pem

@@ -120,6 +120,26 @@ cadence:
     # rebuild of the 30-day track popularity read model
     stats-refresh-interval: ${CADENCE_ACTIVITY_STATS_REFRESH_INTERVAL:5m}
     stats-initial-delay: 30s
+  recommender:
+    # spec 3.5 / D88-D90: the external recommender's GET /v1/recommendations. Off until it is connected
+    # (INTEGRATION.md); while off, every recommendation comes from the popularity fallback.
+    enabled: ${CADENCE_RECOMMENDER_ENABLED:false}
+    base-url: ${CADENCE_RECOMMENDER_BASE_URL:http://localhost:18080}
+    api-key: ${CADENCE_RECOMMENDER_API_KEY:}
+    domain: song
+    # explicit timeouts and attempts (D37): no hidden retries, a Retry-After is never waited out
+    connect-timeout: 300ms
+    read-timeout: 300ms
+    max-attempts: 1
+    fetch-size: 50
+    cache-ttl: 10m
+    circuit-breaker:
+      failure-rate-threshold: 50
+      sliding-window-size: 20
+      minimum-number-of-calls: 5
+      slow-call-duration-threshold: 300ms
+      wait-duration-in-open-state: 30s
+      permitted-calls-in-half-open-state: 2
   search:
     # index names are <prefix>-artists, -albums, -tracks, -playlists
     index-prefix: ${CADENCE_SEARCH_INDEX_PREFIX:cadence}

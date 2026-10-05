@@ -4,11 +4,12 @@ A Spotify-style music streaming app: a Java 21 / Spring Boot 3.5 modular monolit
 FFmpeg transcoding worker (`cadence-transcoder`), shared event contracts (`cadence-events`) and a React web client
 (`cadence-web`). Everything runs
 locally in Docker Compose. See [`spec.md`](spec.md) for the product spec, [`DECISIONS.md`](DECISIONS.md) for
-assumptions, and [`PROGRESS.md`](PROGRESS.md) for what has been built.
+assumptions, [`PROGRESS.md`](PROGRESS.md) for what has been built, and [`INTEGRATION.md`](INTEGRATION.md) for the
+contract with the external recommender.
 
 ## Status
 
-**Phase 1 (core backend and playback) is complete** (slices 1.1–1.6). **Phase 2 (search, activity, web client) is complete**: slices 2.1–2.3. What works now:
+**Phase 1 (core backend and playback) is complete** (slices 1.1–1.6). **Phase 2 (search, activity, web client) is complete**: slices 2.1–2.3. **Phase 3** is in progress: slice 3.1 (recommender integration) is done. What works now:
 
 - Multi-module Maven build (`./mvnw`), JDK 21, virtual threads.
 - `cadence-api` boots. It has Flyway (outbox + processed-event tables), `/actuator/health`, Swagger UI,
@@ -17,7 +18,7 @@ assumptions, and [`PROGRESS.md`](PROGRESS.md) for what has been built.
 - `cadence-transcoder` boots and consumes `catalog.track-uploaded`. It's a stub that only logs; FFmpeg comes in slice 1.4.
 - `cadence-events` holds the shared `EventEnvelope` (spec 3.5), topic names, its JSON Schema and the Jackson settings.
 - **Identity:** register, login (rate-limited to 5 per minute per IP), refresh-token rotation with reuse
-  detection, logout, `GET/PATCH /api/v1/me`, RS256 JWTs (15 min) with public keys at `/.well-known/jwks.json`.
+  detection (the refresh token is an HttpOnly, SameSite=Strict cookie, never in a JSON body or Web Storage), logout, `GET/PATCH /api/v1/me`, RS256 JWTs (15 min) with public keys at `/.well-known/jwks.json`.
   The admin is created at startup from `CADENCE_ADMIN_EMAIL`/`CADENCE_ADMIN_PASSWORD`, and every `/api/v1/admin/**` route requires ADMIN.
 - **Catalog:** public reads (`/artists/{id}` with top tracks, `/artists/{id}/albums`, `/albums/{id}`, `/tracks/{id}`,
   `/genres`) showing READY tracks only. Admin CRUD for artists, albums and tracks, and the upload flow: `upload-url`
@@ -41,7 +42,14 @@ assumptions, and [`PROGRESS.md`](PROGRESS.md) for what has been built.
 - **Activity:** `POST /api/v1/activity/plays` takes playback reports (at 30 s and on completion/skip, one `playId` per
   playback; idempotent). A play counts toward the track's play count exactly once, when it reaches 30 s.
   `GET /api/v1/me/recently-played` (last 50 distinct tracks), `GET /api/v1/me/top/tracks?range=short|medium|long`, and
-  `GET /api/v1/home` with shelves: recently played, your top tracks, popular right now (30-day stats), new releases.
+  `GET /api/v1/home` with shelves: recently played, made for you, because you listened to X, your top tracks, popular
+  right now (30-day stats), new releases.
+- **Recommendations:** `GET /api/v1/me/recommendations` and the two recommendation shelves come from the external
+  recommender's `GET /v1/recommendations`. The client has a 300 ms timeout, no hidden retries and a circuit breaker;
+  answers are cached in Redis for 10 minutes and filtered to READY tracks the user hasn't liked. When the recommender
+  is off or down, popular tracks from the user's top genres are served instead (`"source": "fallback"`). The
+  recommender doesn't consume Cadence's topics yet, so it is **off by default** (`CADENCE_RECOMMENDER_ENABLED`).
+  [`INTEGRATION.md`](INTEGRATION.md) lists what it has to add.
 - **Web client** (`cadence-web`, React + TypeScript + Vite + hls.js): log in / sign up, home shelves, search with
   as-you-type suggestions, artist / album / playlist pages, Liked Songs, your library, top tracks, and a persistent
   player bar with queue, shuffle, repeat, seek, volume and OS media keys. Playback never stops on page navigation.

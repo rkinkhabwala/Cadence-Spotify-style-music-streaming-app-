@@ -159,6 +159,29 @@ public class CatalogReadService implements CatalogQueries {
     }
 
     @Override
+    public Map<UUID, List<String>> genresOf(Collection<UUID> trackIds) {
+        if (trackIds.isEmpty()) {
+            return Map.of();
+        }
+        return tracks.findGenres(trackIds).stream().collect(Collectors.groupingBy(TrackRepository.TrackGenreRow::getTrackId,
+                Collectors.mapping(TrackRepository.TrackGenreRow::getGenre, Collectors.toList())));
+    }
+
+    @Override
+    public List<UUID> popularTrackIds(int limit) {
+        return tracks.findMostPlayedReadyIds(Limit.of(limit));
+    }
+
+    @Override
+    public List<UUID> popularTrackIdsInGenres(Collection<String> genres, int limit) {
+        if (genres.isEmpty()) {
+            return List.of();
+        }
+        List<String> lower = genres.stream().map(g -> g.toLowerCase(java.util.Locale.ROOT)).toList();
+        return tracks.findMostPlayedReadyIdsInGenres(lower, Limit.of(limit));
+    }
+
+    @Override
     public boolean artistExists(UUID artistId) {
         return artists.existsById(artistId);
     }

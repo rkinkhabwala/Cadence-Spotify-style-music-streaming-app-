@@ -27,8 +27,12 @@ public class CatalogFixtures {
     }
 
     public UUID album(UUID artistId, String title, LocalDate releaseDate) {
+        return album(artistId, title, releaseDate, "Rock");
+    }
+
+    public UUID album(UUID artistId, String title, LocalDate releaseDate, String... genres) {
         return id(api.post("/api/v1/admin/albums", Map.of("title", title, "artistId", artistId,
-                "releaseDate", releaseDate.toString(), "type", "ALBUM", "genres", java.util.List.of("Rock")), adminToken));
+                "releaseDate", releaseDate.toString(), "type", "ALBUM", "genres", java.util.List.of(genres)), adminToken));
     }
 
     public UUID track(UUID albumId, String title, int number) {

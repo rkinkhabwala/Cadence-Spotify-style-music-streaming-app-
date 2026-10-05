@@ -8,6 +8,20 @@ export interface PlayReport {
   sourceId: string | null;
   completed: boolean;
   skipped: boolean;
+  /** This tab's listening session, passed on to the recommender (D88). */
+  sessionId: string;
+  /** Set when the track was played from a recommended list: the list's id and the track's slot in it. */
+  recommendationId?: string;
+  position?: number;
+}
+
+/** One listening session per app tab (page load). */
+export const SESSION_ID = crypto.randomUUID();
+
+/** Where a recommended track came from, for the recommender's attribution. */
+export interface Attribution {
+  recommendationId?: string | null;
+  position?: number | null;
 }
 
 /** Playback reports shorter than this are not sent when the user moves on (a quick flick through tracks). */
@@ -34,6 +48,7 @@ export class PlayTracker {
     private readonly sourceId: string | null,
     private readonly send: (report: PlayReport) => void,
     playId: string = crypto.randomUUID(),
+    private readonly attribution: Attribution = {},
   ) {
     this.playId = playId;
   }
@@ -70,9 +85,11 @@ export class PlayTracker {
   }
 
   private emit(completed: boolean, skipped: boolean) {
+    const { recommendationId, position } = this.attribution;
     this.send({
       playId: this.playId, trackId: this.trackId, msPlayed: this.msPlayed, source: this.source, sourceId: this.sourceId,
-      completed, skipped,
+      completed, skipped, sessionId: SESSION_ID,
+      ...(recommendationId ? { recommendationId, ...(position != null ? { position } : {}) } : {}),
     });
   }
 }

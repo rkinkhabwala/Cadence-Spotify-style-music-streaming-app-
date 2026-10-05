@@ -164,14 +164,18 @@ export interface TopTrackItem {
   plays: number;
 }
 
+/** `position`: on recommended tracks, the slot in the recommender's list (sent back with play reports). */
 export type ShelfItem =
-  | { type: 'track'; track: TrackSummary }
+  | { type: 'track'; track: TrackSummary; position?: number }
   | { type: 'album'; album: AlbumSummary };
 
+/** `source` and `recommendationId` are set on the recommendation shelves ("made-for-you", "because-you-listened"). */
 export interface Shelf {
   id: string;
   title: string;
   items: ShelfItem[];
+  source?: 'recommender' | 'fallback';
+  recommendationId?: string | null;
 }
 
 export interface Home {

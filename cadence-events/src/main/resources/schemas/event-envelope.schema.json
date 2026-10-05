@@ -2,17 +2,193 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://cadence.dev/schemas/event-envelope.schema.json",
   "title": "Cadence event envelope",
-  "description": "Shared envelope for every Kafka event (spec 3.5). Consumed by Cadence and the recommender.",
+  "description": "Shared envelope for every Kafka event (spec 3.5). Consumed by Cadence and the recommender; the mapping to the recommender's own event model is RecommenderMapping (D88, INTEGRATION.md).",
   "type": "object",
-  "required": ["eventId", "eventType", "occurredAt", "itemType", "itemId", "payload"],
+  "required": [
+    "eventId",
+    "eventType",
+    "occurredAt",
+    "itemType",
+    "itemId",
+    "payload"
+  ],
   "properties": {
-    "eventId": { "type": "string", "format": "uuid", "description": "Unique id (UUIDv7); consumers dedupe on it" },
-    "eventType": { "type": "string", "examples": ["track-played", "track-liked", "artist-followed", "entity-changed"] },
-    "occurredAt": { "type": "string", "format": "date-time", "description": "ISO-8601 UTC instant" },
-    "userId": { "type": ["string", "null"], "format": "uuid" },
-    "itemType": { "type": "string", "enum": ["song", "artist", "album", "playlist"] },
-    "itemId": { "type": "string", "format": "uuid" },
-    "payload": { "type": "object" }
+    "eventId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique id (UUIDv7); consumers dedupe on it"
+    },
+    "eventType": {
+      "type": "string",
+      "examples": [
+        "track-played",
+        "track-liked",
+        "artist-followed",
+        "entity-changed"
+      ]
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 UTC instant"
+    },
+    "userId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "itemType": {
+      "type": "string",
+      "enum": [
+        "song",
+        "artist",
+        "album",
+        "playlist"
+      ]
+    },
+    "itemId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "payload": {
+      "type": "object"
+    }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "trackPlayedPayload": {
+      "description": "payload of eventType track-played (activity.track-played)",
+      "type": "object",
+      "required": [
+        "playId",
+        "msPlayed",
+        "completed",
+        "skipped",
+        "source"
+      ],
+      "properties": {
+        "playId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "msPlayed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completed": {
+          "type": "boolean"
+        },
+        "skipped": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "PLAYLIST",
+            "ALBUM",
+            "SEARCH",
+            "RADIO",
+            "ARTIST",
+            "LIBRARY",
+            "OTHER"
+          ]
+        },
+        "sourceId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "durationMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "sessionId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 128
+        },
+        "recommendationId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 64
+        },
+        "position": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "entityChangedPayload": {
+      "description": "payload of eventType entity-changed; a song snapshot is a TrackSummary plus genres and releaseDate",
+      "type": "object",
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "CREATED",
+            "UPDATED",
+            "DELETED"
+          ]
+        },
+        "snapshot": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "eventType": {
+            "const": "track-played"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/trackPlayedPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "eventType": {
+            "const": "entity-changed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/entityChangedPayload"
+          }
+        }
+      }
+    }
+  ]
 }

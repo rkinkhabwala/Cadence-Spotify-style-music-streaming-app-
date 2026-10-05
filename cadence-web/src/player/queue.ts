@@ -16,6 +16,9 @@ export interface QueueContext {
   /** What the queue panel says the music is "playing from". */
   label: string;
   href?: string;
+  /** A recommended list (home shelf): its id and each track's slot in the recommender's list, for attribution. */
+  recommendationId?: string;
+  positions?: Record<string, number>;
 }
 
 export interface NowPlaying {

@@ -23,10 +23,12 @@ public class ArtistAdminService {
     private final TrackRepository tracks;
     private final CatalogMapper mapper;
     private final CatalogEvents events;
+    private final TrackSummaries summaries;
     private final Clock clock;
 
     ArtistAdminService(ArtistRepository artists, AlbumRepository albums, TrackRepository tracks, CatalogMapper mapper,
-                       CatalogEvents events, Clock clock) {
+                       CatalogEvents events, TrackSummaries summaries, Clock clock) {
+        this.summaries = summaries;
         this.artists = artists;
         this.albums = albums;
         this.tracks = tracks;
@@ -50,6 +52,7 @@ public class ArtistAdminService {
         artists.flush();
         ArtistView view = mapper.toView(artist);
         events.entityChanged(ItemTypes.ARTIST, id, Action.UPDATED, view);
+        events.tracksChanged(summaries.snapshots(tracks.findByCreditedArtist(id)));
         return view;
     }
 

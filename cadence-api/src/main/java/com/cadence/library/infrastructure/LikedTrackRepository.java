@@ -32,4 +32,7 @@ public interface LikedTrackRepository extends JpaRepository<LikedTrack, LikedTra
             order by l.likedAt desc, l.id.trackId desc""")
     List<LikedTrack> pageAfter(@Param("userId") UUID userId, @Param("at") Instant at, @Param("trackId") UUID trackId,
                                Limit limit);
+
+    @Query("select l.id.trackId from LikedTrack l where l.id.userId = :userId and l.id.trackId in :trackIds")
+    List<UUID> findLikedAmong(@Param("userId") UUID userId, @Param("trackIds") java.util.Collection<UUID> trackIds);
 }

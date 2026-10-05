@@ -46,6 +46,21 @@ class TrackSummaries {
         return of(List.of(track)).getFirst();
     }
 
+    /** Event snapshots: summaries plus album genres and release date. */
+    List<TrackSnapshot> snapshots(Collection<Track> tracks) {
+        Map<UUID, Album> albumById = albums.findAllById(tracks.stream().map(Track::getAlbumId).collect(Collectors.toSet()))
+                .stream().collect(Collectors.toMap(Album::getId, Function.identity()));
+        return of(tracks).stream().map(t -> {
+            Album album = t.album() == null ? null : albumById.get(t.album().id());
+            return TrackSnapshot.of(t, album == null ? List.of() : album.getGenreNames(),
+                    album == null ? null : album.getReleaseDate());
+        }).toList();
+    }
+
+    TrackSnapshot snapshot(Track track) {
+        return snapshots(List.of(track)).getFirst();
+    }
+
     private static TrackSummary toSummary(Track track, Album album, Map<UUID, Artist> artistById) {
         List<ArtistCredit> credits = track.getArtists().stream()
                 .sorted((a, b) -> a.role().compareTo(b.role()))

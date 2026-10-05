@@ -398,3 +398,89 @@ refresh with only the cookie returns `{accessToken, expiresIn, tokenType}`, refr
 204, refresh afterwards → 401. `make web-verify` (headless Chrome, :3000): PASS, including the reload check.
 
 **Assumptions:** D86.
+
+## Slice 3.1 — Recommender integration
+
+**Plan**
+- Contract (D87, D88): the recommender's own spec (`~/Desktop/Recommendation engine/spec.md` and its code, read-only)
+  serves `GET /v1/recommendations` (X-Api-Key), which fits. It has no consumer for Cadence's Kafka topics, no
+  unlike/unfollow event types and no artist-level follow. So: `INTEGRATION.md` lists exactly what it must add,
+  Cadence builds against a WireMock stub of that contract, and the fallback is the default
+  (`CADENCE_RECOMMENDER_ENABLED=false`).
+- Envelope alignment in `cadence-events`:
+  - `track-played` payload gains `durationMs`, `sessionId`, `recommendationId` and `position`, which the recommender
+    needs for completion %, skip position, sessions and attribution.
+  - Track `entity-changed` snapshots gain `genres` and `releaseDate`, and album/artist changes re-emit their tracks,
+    so each track event is a self-contained `CatalogItem`.
+  - JSON schema updated.
+- Migration `V6__activity_recommendation_context.sql`: `play_events.session_id`, `recommendation_id`, `rec_position`.
+  `POST /activity/plays` accepts them.
+- `activity`:
+  - `RecommenderClient`: RestClient on the JDK HttpClient (D37), explicit 300 ms connect/read timeouts, explicit
+    attempts (1 = no retries; never retries 429/503 or timeouts, `Retry-After` ignored), Resilience4j circuit breaker.
+  - `RecommendationService`: over-fetch, hydrate from the catalog, drop non-READY and liked tracks, Redis cache 10 min
+    (recommender results only, fail-open), fallback = popular tracks (TrackStats, then all-time play counts) from the
+    genres the user streams most.
+  - `GET /me/recommendations`; home shelves "Made for you" and "Because you listened to X".
+- Public APIs: `CatalogQueries.genresOf` / `popularTracks`, `LibraryQueries.likedAmong`.
+- Web: home shelves carry the `recommendationId`; play reports send `sessionId`, `recommendationId` and `position`.
+- Compose/.env: `CADENCE_RECOMMENDER_*`.
+- Tests: WireMock-backed `RecommendationIT` (contract request shape, ≥ 20 READY non-liked recommendations, filtering,
+  cache, timeout, 503 + Retry-After with no hidden retry, circuit breaker, disabled → fallback, home shelves,
+  validation/401). `RecommenderFeedIT`: a play, like and follow are on Kafka within 2 s in the aligned envelope and map
+  to valid recommender events. Unit tests for the fallback ranking and the event mapping.
+
+**Built**
+- `INTEGRATION.md`: the final contract. What already fits (`GET /v1/recommendations`), and what the recommender must add:
+  - G1: a bridge consuming Cadence's topics, with the exact event mapping
+  - G2: UNLIKE/UNFOLLOW
+  - G3: artist-level FOLLOW
+  - G4: `cadence-net` and host-port remapping
+- `cadence-events`:
+  - `TrackPlayedPayload` gains `durationMs`, `sessionId`, `recommendationId`, `position`
+  - schema `$defs` for the track-played and entity-changed payloads
+  - `recommender.RecommenderMapping`: envelope → the recommender's `EventDto` / `CatalogItemDto`
+- Migration `V6__activity_recommendation_context.sql`.
+- `catalog`:
+  - `TrackSnapshot` (summary + album genres + release date) in every track `entity-changed`
+  - album/artist updates re-emit their tracks
+  - `CatalogQueries.genresOf`, `popularTrackIds`, `popularTrackIdsInGenres`
+- `library`: public `LibraryQueries.likedAmong`.
+- `activity`:
+  - `RecommenderClient` (JDK HttpClient, 300 ms timeouts, explicit attempts, Resilience4j circuit breaker + Micrometer
+    metrics), `RecommenderProperties`, `RecommendationCache` (Redis, 10 min, fail-open)
+  - `FallbackRanking` (domain), `RecommendationService`, `RecommendationController` (`GET /me/recommendations`)
+  - `HomeService`: "Made for you" and "Because you listened to X", fetched in parallel
+  - play reports carry `sessionId`/`recommendationId`/`position`
+- `cadence-web`: per-tab `SESSION_ID` on every play report; recommendation shelves pass `recommendationId` + `position`.
+- Config: `cadence.recommender.*`, `CADENCE_RECOMMENDER_*` in `.env.example`, in-network URL override in Compose.
+  Dependencies: `resilience4j-circuitbreaker`, `resilience4j-micrometer`, `wiremock-standalone` (test).
+
+**Tests: 249 passing, 0 skipped** (+24).
+- `cadence-events`: `RecommenderMappingTest` (4): play_start/play_end/skip once per playback, likes/follows,
+  retractions unmapped, catalog items, camelCase JSON, all checked against the recommender's `EventValidator` rules.
+  `EventEnvelopeTest` +1 (payload schema ↔ record).
+- API unit: `FallbackRankingTest` (3), `PlayEventTest` +1.
+- `RecommendationIT` (10, WireMock stub of `GET /v1/recommendations`, the recommender enabled):
+  - AC2: 22 plays → 27 recommendations, none liked, all READY
+  - the request matches the contract (path, params, `X-Api-Key`, radio + seed)
+  - caching: one call per user, TTL ≈ 600 s
+  - a like after caching still filters
+  - a 2 s delay is cut off at 300 ms and the fallback is served in < 1.5 s
+  - 503 and 429 with `Retry-After: 30`: exactly one request, answered in < 2 s
+  - the circuit opens after 5 failures and stops calling
+  - an empty or all-liked answer → fallback
+  - home shelves with recommendationId/positions, seed excluded
+  - validation/401
+- `RecommenderContractIT` (4):
+  - play/like/follow on Kafka < 2 s after the request, mapping to valid recommender events (skip position, duration,
+    session, attribution)
+  - an album genre change re-emits a self-contained track item
+  - the default (off) fallback ranks the user's genres first and never liked tracks
+  - play-context validation
+- `ActivityIT` home assertions now include the recommendation shelves. Web: `tracker.test` +1.
+
+**Not verified against the real recommender:** it can't consume Cadence's events yet (INTEGRATION.md G1–G3). The
+client is verified against the stub of its actual contract, and the fallback is the default.
+
+**Assumptions:** D87–D92.
