@@ -2,8 +2,10 @@ package com.cadence.common.security;
 
 import com.cadence.common.web.ApiPaths;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -13,6 +15,9 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
@@ -31,9 +36,11 @@ class SecurityConfig {
     private static final String V1 = ApiPaths.V1;
 
     @Bean
-    SecurityFilterChain apiSecurity(HttpSecurity http, JwtDecoder jwtDecoder, ObjectMapper objectMapper) throws Exception {
+    SecurityFilterChain apiSecurity(HttpSecurity http, JwtDecoder jwtDecoder, ObjectMapper objectMapper,
+                                    @Value("${cadence.web.allowed-origins}") List<String> webOrigins) throws Exception {
         ProblemSecurityHandlers problems = new ProblemSecurityHandlers(objectMapper);
         http
+                .cors(cors -> cors.configurationSource(corsConfiguration(webOrigins)))
                 .csrf(AbstractHttpConfigurer::disable)          // bearer tokens only, no cookies (yet)
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
@@ -65,6 +72,24 @@ class SecurityConfig {
                         .accessDeniedHandler(problems))
                 .exceptionHandling(e -> e.authenticationEntryPoint(problems).accessDeniedHandler(problems));
         return http.build();
+    }
+
+    /**
+     * Spec 6: CORS restricted to the web client's origin(s). The dev server and the web container proxy the API
+     * (same origin), so this matters only when the client is served from elsewhere. Bearer tokens, no cookies.
+     */
+    static CorsConfigurationSource corsConfiguration(List<String> origins) {
+        CorsConfiguration cors = new CorsConfiguration();
+        cors.setAllowedOrigins(origins.stream().map(String::strip).filter(o -> !o.isEmpty()).toList());
+        cors.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        cors.setAllowedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE, HttpHeaders.ACCEPT, HttpHeaders.IF_MATCH));
+        cors.setExposedHeaders(List.of(HttpHeaders.ETAG, HttpHeaders.LOCATION, HttpHeaders.RETRY_AFTER));
+        cors.setAllowCredentials(false);
+        cors.setMaxAge(3600L);
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/api/**", cors);
+        source.registerCorsConfiguration("/.well-known/**", cors);
+        return source;
     }
 
     private static JwtAuthenticationConverter authenticationConverter() {

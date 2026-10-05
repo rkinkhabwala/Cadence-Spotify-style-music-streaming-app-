@@ -311,3 +311,55 @@ Verification builds ran on an identical copy of the tree outside iCloud.
   retry and Kafka redelivery, recently played (51 uploaded tracks) in order.
 
 **Assumptions:** D68–D75.
+
+## Slice 2.3 — Web client
+
+**Plan**
+- `cadence-web` (React 19 + TypeScript + Vite + hls.js, TanStack Query, React Router), a Maven module built with
+  `frontend-maven-plugin` (pinned Node, `npm ci`, typecheck + build + Vitest) so `./mvnw verify` covers it.
+- App shell: sidebar (nav, your library), main view, persistent player bar, queue panel. Pages: log in, sign up,
+  home (shelves), search (suggest-as-you-type, top result, grouped results), artist, album, playlist (rename, remove,
+  reorder), liked songs, library, your top tracks, admin (create artist/album/track, upload audio with progress, live
+  processing status, retry failed).
+- Player: one audio element owned above the router (navigation can never interrupt it), hls.js with a native-HLS
+  fallback, queue with up-next, shuffle and repeat off/all/one, seek, volume, Media Session keys, and play reports at
+  30 s and on completion/skip with one `playId` per playback.
+- Backend support: CORS for the web origin (spec 6), `GET /me/following/artists`, the owner name on playlist detail,
+  a `web` container (nginx) in the Compose `app` profile.
+- Tests: Vitest unit tests (queue, play tracker, API client refresh) and component tests (player bar, search
+  suggestions, and **playback continuing across route changes**). API ITs for CORS and the new endpoints.
+  `scripts/verify-web.sh` drives the real app in headless Chrome against the running stack: play, navigate, assert the
+  audio kept playing without reloading.
+
+**Built**
+- `cadence-web` (Maven module, `frontend-maven-plugin`, Node v24.19.0):
+  - `api/`: typed client (single-flight, cross-tab-locked refresh), endpoints, TanStack Query hooks
+  - `player/`: `queue` state machine, `PlayTracker` (30 s / completion / skip reports), `AudioEngine` (hls.js light,
+    native-HLS fallback, one recovery from expired segment URLs), `PlayerProvider` above the router
+  - `components/`: app shell, sidebar with Your Library (playlists, saved albums, followed artists), top bar, player
+    bar, queue panel, search box with suggestions, track list with row menu (queue, add to playlist, go to
+    artist/album, remove), cards, generated artwork, slider, toasts
+  - `pages/`: login/sign-up, home, search, artist, album, playlist (edit, visibility, remove, drag to reorder, delete),
+    Liked Songs, your top tracks + recently played, catalog admin (3-step create + upload with progress, live
+    processing table, retry)
+  - `Dockerfile` + `nginx.conf` (static files + API proxy); Compose service `web` (profile `app`, :3000)
+  - `scripts/verify-browser.mjs` + `scripts/verify-web.sh` (`make web-verify`); `make web`
+- API: CORS for the web origins; `GET /me/following/artists`; `ownerName` on playlist detail;
+  `CatalogQueries.findArtists`.
+
+**Tests: 215 passing, 0 skipped** (+23).
+- Web (Vitest, run by `./mvnw verify`): `queue.test` (8), `tracker.test` (4), `client.test` (3), `SearchBox.test` (2),
+  `PlaybackAcrossNavigation.test` (3): AC5 (same audio element, no reload, through sidebar, player-bar and
+  programmatic navigation and history, with the 30 s report afterwards); player controls; signed-out redirect.
+- API: `WebClientSupportIT` (3): CORS allowed/rejected/exposed headers, followed-artists paging, playlist owner name.
+
+**Verified manually** against the full stack (`make up`, `make app`, `make seed`):
+- `make seed` renamed the Phase 1 fixture to "The Beatlz". The API created the search indices at startup and replayed
+  40 events into them.
+- `verify-web` in headless Chrome against both the container (:3000) and the Vite dev server (:5173): log in →
+  typing "beatls" suggests The Beatlz → play → Home, Search, album (from the player bar), Liked Songs, Back. Playback
+  continued with the same element and one load (PASS). This found one bug: nginx forwarded `X-Forwarded-Proto`
+  without a port, so manifest URLs lost `:3000` (fixed in `nginx.conf`).
+- `verify-player.sh`: `/dev/player.html` still plays and seeks (PASS).
+
+**Assumptions:** D76–D85.

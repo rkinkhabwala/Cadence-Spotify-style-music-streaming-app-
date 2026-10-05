@@ -113,6 +113,9 @@ cadence:
   streaming:
     manifest-url-ttl: 5m
     segment-url-ttl: 5m
+  web:
+    # browser origins allowed by CORS (spec 6): Vite dev server, Vite preview, the web container
+    allowed-origins: ${CADENCE_WEB_ORIGINS:http://localhost:5173,http://localhost:4173,http://localhost:3000}
   activity:
     # rebuild of the 30-day track popularity read model
     stats-refresh-interval: ${CADENCE_ACTIVITY_STATS_REFRESH_INTERVAL:5m}

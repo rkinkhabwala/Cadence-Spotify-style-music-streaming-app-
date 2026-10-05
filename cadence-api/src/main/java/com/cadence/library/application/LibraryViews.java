@@ -1,6 +1,7 @@
 package com.cadence.library.application;
 
 import com.cadence.catalog.CatalogRefs.AlbumRef;
+import com.cadence.catalog.CatalogRefs.ArtistRef;
 import com.cadence.catalog.TrackSummary;
 import com.cadence.common.pagination.CursorPage;
 import com.cadence.library.domain.Visibility;
@@ -22,7 +23,8 @@ public final class LibraryViews {
     public record PlaylistItem(UUID trackId, TrackSummary track, boolean playable, UUID addedBy, Instant addedAt) {
     }
 
-    public record PlaylistDetail(UUID id, UUID ownerId, String name, String description, String coverUrl,
+    /** {@code ownerName} is the owner's current display name. */
+    public record PlaylistDetail(UUID id, UUID ownerId, String ownerName, String name, String description, String coverUrl,
                                  Visibility visibility, boolean collaborative, int trackCount, long version,
                                  Instant createdAt, Instant updatedAt, CursorPage<PlaylistItem> tracks) {
     }
@@ -31,5 +33,8 @@ public final class LibraryViews {
     }
 
     public record SavedAlbumView(AlbumRef album, Instant savedAt) {
+    }
+
+    public record FollowedArtistView(ArtistRef artist, Instant followedAt) {
     }
 }

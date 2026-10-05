@@ -1,13 +1,14 @@
 # Cadence
 
 A Spotify-style music streaming app: a Java 21 / Spring Boot 3.5 modular monolith (`cadence-api`), a Kafka +
-FFmpeg transcoding worker (`cadence-transcoder`), and shared event contracts (`cadence-events`). Everything runs
+FFmpeg transcoding worker (`cadence-transcoder`), shared event contracts (`cadence-events`) and a React web client
+(`cadence-web`). Everything runs
 locally in Docker Compose. See [`spec.md`](spec.md) for the product spec, [`DECISIONS.md`](DECISIONS.md) for
 assumptions, and [`PROGRESS.md`](PROGRESS.md) for what has been built.
 
 ## Status
 
-**Phase 1 (core backend and playback) is complete** (slices 1.1–1.6). **Phase 2** (search, activity, web client) is in progress; slices 2.1 (search) and 2.2 (activity) are done. What works now:
+**Phase 1 (core backend and playback) is complete** (slices 1.1–1.6). **Phase 2 (search, activity, web client) is complete**: slices 2.1–2.3. What works now:
 
 - Multi-module Maven build (`./mvnw`), JDK 21, virtual threads.
 - `cadence-api` boots. It has Flyway (outbox + processed-event tables), `/actuator/health`, Swagger UI,
@@ -41,6 +42,10 @@ assumptions, and [`PROGRESS.md`](PROGRESS.md) for what has been built.
   playback; idempotent). A play counts toward the track's play count exactly once, when it reaches 30 s.
   `GET /api/v1/me/recently-played` (last 50 distinct tracks), `GET /api/v1/me/top/tracks?range=short|medium|long`, and
   `GET /api/v1/home` with shelves: recently played, your top tracks, popular right now (30-day stats), new releases.
+- **Web client** (`cadence-web`, React + TypeScript + Vite + hls.js): log in / sign up, home shelves, search with
+  as-you-type suggestions, artist / album / playlist pages, Liked Songs, your library, top tracks, and a persistent
+  player bar with queue, shuffle, repeat, seek, volume and OS media keys. Playback never stops on page navigation.
+  Admins get a catalog page: create artists, albums and tracks, upload audio with progress, and watch transcoding.
 - **Caching:** artist and album pages are cached in Redis for 10 minutes and cleared on every catalog change.
 - **Seed data:** `make seed` loads 5 artists, 10 albums and 20 tracks through the real upload flow, plus a demo listener.
 
@@ -67,8 +72,23 @@ make seed              # load the demo catalog through the real upload flow (nee
 make down              # stop infra (data kept in volumes; `docker compose down -v` wipes it)
 ```
 
+### Web client
+
+Prerequisites: the backend running with seeded data (above), and Node 22.12+ (Node 24 recommended).
+
+```bash
+make web               # = cd cadence-web && npm install && npm run dev  →  http://localhost:5173
+```
+
+Log in with the demo listener (`CADENCE_DEMO_EMAIL` / `CADENCE_DEMO_PASSWORD` from `.env`), or as the admin
+(`CADENCE_ADMIN_*`) to see the **Catalog admin** page. The dev server proxies `/api` to `http://localhost:8080`
+(override with `CADENCE_API_URL`). `make app` also starts the client as a container at http://localhost:3000.
+`make web-verify` runs the browser check: headless Chrome logs in, finds "The Beatlz" by typing "beatls", starts
+playback and navigates through five pages, asserting the same audio element keeps playing without a reload.
+
 | Service | URL / port | Notes |
 |---|---|---|
+| Web client | http://localhost:5173 (`make web`) or :3000 (`make app`) | React app |
 | cadence-api | http://localhost:8080 | REST API under `/api/v1` |
 | cadence-transcoder | http://localhost:8081 | health only |
 | Dev player | http://localhost:8080/dev/player.html | dev profile only (on by default in `make run-api` / `make app`) |
@@ -85,7 +105,8 @@ the Spring apps read `.env`, which is git-ignored.
 ## Test
 
 ```bash
-make test              # = ./mvnw verify : unit tests (*Test) + Testcontainers integration tests (*IT)
+make test              # = ./mvnw verify : unit tests (*Test), Testcontainers integration tests (*IT),
+                       #   the web client's typecheck, build and Vitest suite, and the acceptance suites
 ```
 
 Integration tests start their own Postgres, Kafka, Redis, MinIO and Elasticsearch containers (transcoder tests run the real
@@ -107,10 +128,18 @@ curl -s localhost:8080/api/v1/me -H "Authorization: Bearer <accessToken>"
 cadence-events/        shared EventEnvelope, Topics, UuidV7, Jackson config, JSON schema
 cadence-api/           com.cadence.{common, identity, catalog, library, streaming, search, activity}
 cadence-transcoder/    Kafka consumer → FFmpeg → MinIO
-cadence-e2e/           acceptance tests against the packaged jars (Phase 1 criteria)
-scripts/               toolchains, dev keys, seed.py, verify-player.sh
+cadence-web/           React + TypeScript + Vite + hls.js web client (Maven module via frontend-maven-plugin)
+cadence-e2e/           acceptance tests against the packaged jars (Phase 1 and 2 criteria)
+scripts/               toolchains, dev keys, seed.py, verify-player.sh, verify-web.sh
 docker-compose.yml     postgres, redis, kafka, minio (+ bucket init), elasticsearch, kafka-ui on network cadence-net
 ```
 
 Bounded contexts talk only through public interfaces and outbox events. `ModularityTest` (Spring Modulith)
 fails the build on boundary violations.
+
+## Working copy on an iCloud-synced Desktop
+
+If the repository lives in an iCloud-synced folder (macOS "Desktop & Documents"), iCloud syncs Maven's `target/`
+folders and `cadence-web/node_modules`, and it can restore deleted build files as `name 2` copies in the middle of a
+build. That shows up as errors like "Found more than one migration with version 1" or `NoClassDefFoundError`. Keep
+the repository outside synced folders (e.g. `~/dev/cadence`), or run `./mvnw clean verify` after iCloud is idle.

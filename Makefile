@@ -6,7 +6,7 @@ export JAVA_HOME
 COMPOSE := docker compose
 INFRA := postgres redis kafka minio elasticsearch kafka-ui
 
-.PHONY: help env keys toolchains up app app-down down logs ps seed test build run-api run-transcoder clean
+.PHONY: help env keys toolchains up app app-down down logs ps seed test build run-api run-transcoder web web-verify clean
 
 help: ## Show targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-16s %s\n", $$1, $$2}'
@@ -24,11 +24,11 @@ up: env ## Start infrastructure (postgres, redis, kafka, minio, elasticsearch, k
 	$(COMPOSE) up -d --wait $(INFRA)
 	$(COMPOSE) up --no-log-prefix --exit-code-from minio-init minio-init
 
-app: env keys ## Build and run api + transcoder as containers too (Compose profile "app")
-	$(COMPOSE) --profile app up -d --build --wait api transcoder
+app: env keys ## Build and run api + transcoder + web client as containers too (Compose profile "app")
+	$(COMPOSE) --profile app up -d --build --wait api transcoder web
 
-app-down: ## Stop the api + transcoder containers (infra keeps running)
-	$(COMPOSE) --profile app stop api transcoder
+app-down: ## Stop the api, transcoder and web containers (infra keeps running)
+	$(COMPOSE) --profile app stop api transcoder web
 
 down: ## Stop infrastructure (keeps volumes; use `docker compose down -v` to wipe data)
 	$(COMPOSE) --profile app down
@@ -53,6 +53,12 @@ run-api: env keys ## Run cadence-api on the host (needs `make up`)
 
 run-transcoder: env ## Run cadence-transcoder on the host (needs `make up` and ffmpeg on PATH)
 	./mvnw -pl cadence-transcoder -am -DskipTests install -q && ./mvnw -pl cadence-transcoder spring-boot:run
+
+web: ## Run the web client dev server on http://localhost:5173 (needs the API on :8080)
+	cd cadence-web && npm install --no-audit --no-fund && npm run dev
+
+web-verify: ## Browser check: plays a track in the real web client and navigates without interrupting it
+	./scripts/verify-web.sh
 
 clean: ## Remove build output
 	./mvnw -B -q clean

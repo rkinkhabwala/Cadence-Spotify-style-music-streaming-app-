@@ -141,6 +141,15 @@ public class CatalogReadService implements CatalogQueries {
     }
 
     @Override
+    public Map<UUID, ArtistRef> findArtists(Collection<UUID> artistIds) {
+        if (artistIds.isEmpty()) {
+            return Map.of();
+        }
+        return artists.findAllById(artistIds).stream()
+                .collect(Collectors.toMap(Artist::getId, a -> new ArtistRef(a.getId(), a.getName())));
+    }
+
+    @Override
     public List<AlbumSummary> newReleases(int limit) {
         List<Album> rows = albums.findNewReleases(LocalDate.now(clock), Limit.of(limit));
         Map<UUID, Artist> artistById = artists.findAllById(rows.stream().map(Album::getArtistId).collect(Collectors.toSet()))

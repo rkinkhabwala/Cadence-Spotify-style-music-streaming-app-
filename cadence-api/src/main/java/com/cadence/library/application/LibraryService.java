@@ -2,13 +2,16 @@ package com.cadence.library.application;
 
 import com.cadence.catalog.CatalogQueries;
 import com.cadence.catalog.CatalogRefs.AlbumRef;
+import com.cadence.catalog.CatalogRefs.ArtistRef;
 import com.cadence.catalog.TrackSummary;
 import com.cadence.common.error.NotFoundException;
 import com.cadence.common.pagination.Cursor;
 import com.cadence.common.pagination.CursorPage;
 import com.cadence.common.pagination.CursorRequest;
+import com.cadence.library.application.LibraryViews.FollowedArtistView;
 import com.cadence.library.application.LibraryViews.LikedTrackView;
 import com.cadence.library.application.LibraryViews.SavedAlbumView;
+import com.cadence.library.domain.FollowedArtist;
 import com.cadence.library.domain.LikedTrack;
 import com.cadence.library.domain.SavedAlbum;
 import com.cadence.library.infrastructure.FollowedArtistRepository;
@@ -91,6 +94,19 @@ public class LibraryService {
         if (follows.unfollow(userId, artistId) == 1) {
             events.artistFollowed(userId, artistId, false, now);
         }
+    }
+
+    /** Most recently followed first; artists deleted from the catalog are left out. */
+    @Transactional(readOnly = true)
+    public CursorPage<FollowedArtistView> followedArtists(UUID userId, CursorRequest page) {
+        Limit limit = Limit.of(page.fetchSize());
+        List<FollowedArtist> rows = page.isFirstPage()
+                ? follows.firstPage(userId, limit)
+                : follows.pageAfter(userId, page.cursor().instant(0), page.cursor().uuid(1), limit);
+        CursorPage<FollowedArtist> result = CursorPage.of(rows, page, f -> Cursor.of(f.getFollowedAt(), f.getArtistId()));
+        Map<UUID, ArtistRef> artists = catalog.findArtists(result.items().stream().map(FollowedArtist::getArtistId).toList());
+        return new CursorPage<>(result.items().stream().filter(f -> artists.containsKey(f.getArtistId()))
+                .map(f -> new FollowedArtistView(artists.get(f.getArtistId()), f.getFollowedAt())).toList(), result.nextCursor());
     }
 
     @Transactional

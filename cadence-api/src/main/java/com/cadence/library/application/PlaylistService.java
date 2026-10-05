@@ -10,6 +10,7 @@ import com.cadence.common.pagination.Cursor;
 import com.cadence.common.pagination.CursorPage;
 import com.cadence.common.pagination.CursorRequest;
 import com.cadence.events.EntityChangedPayload.Action;
+import com.cadence.identity.UserAccounts;
 import com.cadence.library.application.LibraryViews.PlaylistDetail;
 import com.cadence.library.application.LibraryViews.PlaylistItem;
 import com.cadence.library.application.LibraryViews.PlaylistView;
@@ -48,15 +49,17 @@ public class PlaylistService {
     private final CatalogQueries catalog;
     private final LibraryMapper mapper;
     private final LibraryEvents events;
+    private final UserAccounts accounts;
     private final Clock clock;
 
     PlaylistService(PlaylistRepository playlists, PlaylistTrackRepository playlistTracks, CatalogQueries catalog,
-                    LibraryMapper mapper, LibraryEvents events, Clock clock) {
+                    LibraryMapper mapper, LibraryEvents events, UserAccounts accounts, Clock clock) {
         this.playlists = playlists;
         this.playlistTracks = playlistTracks;
         this.catalog = catalog;
         this.mapper = mapper;
         this.events = events;
+        this.accounts = accounts;
         this.clock = clock;
     }
 
@@ -95,7 +98,8 @@ public class PlaylistService {
             return new PlaylistItem(t.getTrackId(), summary, summary != null && summary.isPlayable(), t.getAddedBy(), t.getAddedAt());
         });
         PlaylistView v = mapper.toView(playlist);
-        return new PlaylistDetail(v.id(), v.ownerId(), v.name(), v.description(), v.coverUrl(), v.visibility(),
+        String ownerName = accounts.displayNames(List.of(v.ownerId())).get(v.ownerId());
+        return new PlaylistDetail(v.id(), v.ownerId(), ownerName, v.name(), v.description(), v.coverUrl(), v.visibility(),
                 v.collaborative(), v.trackCount(), v.version(), v.createdAt(), v.updatedAt(), items);
     }
 

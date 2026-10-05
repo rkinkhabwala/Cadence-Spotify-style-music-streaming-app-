@@ -220,6 +220,19 @@ services:
       - "127.0.0.1:${CADENCE_TRANSCODER_PORT:-8081}:8081"
     networks: [cadence-net]
 
+  web:
+    profiles: [app]
+    build:
+      context: .
+      dockerfile: cadence-web/Dockerfile
+    image: cadence-web:local
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${CADENCE_WEB_PORT:-3000}:80"
+    networks: [cadence-net]
+
 networks:
   cadence-net:
     name: cadence-net

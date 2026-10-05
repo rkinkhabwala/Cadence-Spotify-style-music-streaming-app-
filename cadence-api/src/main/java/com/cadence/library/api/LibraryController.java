@@ -5,6 +5,7 @@ import com.cadence.common.pagination.CursorRequest;
 import com.cadence.common.security.CurrentUser;
 import com.cadence.common.web.ApiPaths;
 import com.cadence.library.application.LibraryService;
+import com.cadence.library.application.LibraryViews.FollowedArtistView;
 import com.cadence.library.application.LibraryViews.LikedTrackView;
 import com.cadence.library.application.LibraryViews.SavedAlbumView;
 import io.swagger.v3.oas.annotations.Operation;
@@ -66,6 +67,13 @@ class LibraryController {
     @Operation(summary = "Unfollow an artist (idempotent)")
     void unfollow(CurrentUser user, @PathVariable UUID artistId) {
         library.unfollow(user.id(), artistId);
+    }
+
+    @GetMapping("/following/artists")
+    @Operation(summary = "Followed artists, most recently followed first")
+    CursorPage<FollowedArtistView> following(CurrentUser user, @RequestParam(required = false) Integer limit,
+                                             @RequestParam(required = false) String cursor) {
+        return library.followedArtists(user.id(), CursorRequest.of(limit, cursor));
     }
 
     @PutMapping("/albums/{albumId}")

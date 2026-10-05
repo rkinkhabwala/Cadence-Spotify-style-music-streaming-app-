@@ -18,6 +18,9 @@ public interface CatalogQueries {
     /** Album references keyed by id; unknown ids are absent. */
     Map<UUID, CatalogRefs.AlbumRef> findAlbums(Collection<UUID> albumIds);
 
+    /** Artist references keyed by id; unknown ids are absent. */
+    Map<UUID, CatalogRefs.ArtistRef> findArtists(Collection<UUID> artistIds);
+
     /** Released albums (release date today or earlier) with at least one READY track, newest first. */
     List<AlbumSummary> newReleases(int limit);
 
