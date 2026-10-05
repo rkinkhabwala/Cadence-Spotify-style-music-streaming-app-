@@ -14,6 +14,9 @@ public interface CatalogQueries {
     /** Tracks in any status keyed by id; unknown ids are absent from the map. */
     Map<UUID, TrackSummary> findTracks(Collection<UUID> trackIds);
 
+    /** Album references keyed by id; unknown ids are absent. */
+    Map<UUID, CatalogRefs.AlbumRef> findAlbums(Collection<UUID> albumIds);
+
     boolean artistExists(UUID artistId);
 
     boolean albumExists(UUID albumId);

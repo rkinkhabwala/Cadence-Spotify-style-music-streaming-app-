@@ -7,7 +7,7 @@ assumptions, and [`PROGRESS.md`](PROGRESS.md) for what has been built.
 
 ## Status
 
-**Phase 1: slices 1.1–1.4 (skeleton, identity, catalog/uploads, transcoding and streaming) are done.** What works now:
+**Phase 1: slices 1.1–1.5 (skeleton, identity, catalog/uploads, transcoding/streaming, library) are done.** What works now:
 
 - Multi-module Maven build (`./mvnw`), JDK 21, virtual threads.
 - `cadence-api` boots. It has Flyway (outbox + processed-event tables), `/actuator/health`, Swagger UI,
@@ -29,7 +29,10 @@ assumptions, and [`PROGRESS.md`](PROGRESS.md) for what has been built.
 - **Playback:** `POST /api/v1/playback/{trackId}` → `{manifestUrl, expiresAt, durationMs}`. The API serves the manifests
   (free users only see 96/160 kbps) with presigned MinIO segment URLs. `GET /api/v1/tracks/{id}/stream` serves HTTP Range
   requests. A test player lives at http://localhost:8080/dev/player.html (dev profile).
-- Not built yet: library (playlists, likes, follows) and seed data (slices 1.5–1.6).
+- **Library:** playlists (create, rename with `If-Match`, delete; add at a position, remove, reorder with fractional
+  ordering; up to 10,000 tracks; private by default), plus idempotent likes, follows and saved albums. Likes and
+  follows emit `library.*` events for the recommender.
+- Not built yet: seed data (slice 1.6).
 
 ## Prerequisites
 

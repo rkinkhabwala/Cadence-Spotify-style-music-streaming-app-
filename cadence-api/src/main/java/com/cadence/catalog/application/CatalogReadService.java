@@ -124,6 +124,15 @@ public class CatalogReadService implements CatalogQueries {
     }
 
     @Override
+    public Map<UUID, com.cadence.catalog.CatalogRefs.AlbumRef> findAlbums(Collection<UUID> albumIds) {
+        if (albumIds.isEmpty()) {
+            return Map.of();
+        }
+        return albums.findAllById(albumIds).stream().collect(Collectors.toMap(Album::getId,
+                a -> new com.cadence.catalog.CatalogRefs.AlbumRef(a.getId(), a.getTitle(), a.getCoverUrl())));
+    }
+
+    @Override
     public boolean artistExists(UUID artistId) {
         return artists.existsById(artistId);
     }

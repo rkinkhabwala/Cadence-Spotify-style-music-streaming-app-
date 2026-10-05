@@ -149,3 +149,36 @@ Append-only log of completed slices.
   - `CadenceApiApplicationIT` (+1): dev page hidden without the dev profile
 
 **Assumptions:** D38–D45. Notably, segment URLs live 5 min + track duration so long tracks can be seeked (D38).
+
+## Slice 1.5 — Library
+
+**Plan**
+- Migration `V4__library.sql`: `playlists` (version, track_count), `playlist_tracks` (fractional `position` in `COLLATE "C"`, unique per playlist), `liked_tracks`, `followed_artists`, `saved_albums`.
+- Domain:
+  - `FractionalIndex`, a port of the fractional-indexing algorithm (base-62 keys; appends stay short)
+  - `Playlist` (ownership, visibility, optimistic `@Version`)
+  - `PlaylistTrack`, `LikedTrack`, `FollowedArtist`, `SavedAlbum`
+- Playlists:
+  - `GET /me/playlists`; `POST/GET/PATCH/DELETE /playlists/{id}`. PATCH requires `If-Match` (412 on mismatch, 428 when missing).
+  - Add (with `position`), remove, reorder (`afterTrackId`). The playlist row is version-checked before track rows change, so concurrent edits never lose writes.
+  - At most 10,000 tracks.
+- Likes and follows: idempotent `PUT`/`DELETE /me/likes/tracks/{id}` and `/me/following/artists/{id}`, plus `GET /me/likes/tracks`. Events `library.track-liked` / `library.artist-followed` (and their un- counterparts) go through the outbox in the shared envelope (`itemType` song/artist).
+- Saved albums (spec 4 entity): `PUT/DELETE/GET /me/albums`.
+- Tests: FractionalIndex unit tests (including randomized). ITs for create/add/reorder/persisted order, positional insert, pagination, idempotent like/unlike and follow/unfollow with events, ownership 403/404, version conflicts (412/428), concurrent edits, the 10,000 limit.
+
+**Built**
+- `library` context:
+  - Domain: `FractionalIndex`, `Playlist` (visibility, ownership checks, `@Version`, 10,000-track limit), `PlaylistTrack`, `LikedTrack`, `FollowedArtist`, `SavedAlbum`, `Visibility`
+  - Repositories with keyset pages and race-free `ON CONFLICT` writes
+  - `PlaylistService` (version-checked playlist row flushed before track rows), `LibraryService`, `LibraryEvents` (outbox), MapStruct `LibraryMapper`
+  - `PlaylistController` (ETag / If-Match) and `LibraryController`
+- `common.web.ETags` (strong version ETags, If-Match parsing, 428 helper). `CatalogQueries.findAlbums`.
+- Migration `V4`.
+
+**Tests: 140 passing, 0 skipped** (+18).
+- Unit: `FractionalIndexTest` (5): known sequences, 10,000 appends ≤ 4 characters, bulk inserts, 5,000 random inserts and moves, invalid keys.
+- Integration:
+  - `PlaylistIT` (8): create, add 3, reorder, persisted order (other positions untouched); positional insert and pagination; idempotent add/remove and READY-only; private 404 / public read / owner-only 403 / anonymous 401; 428/412/ETag; 8 concurrent adds with no lost writes; the 10,000 limit; `/me/playlists`
+  - `LibraryIT` (5): idempotent like/unlike with exactly one event per change, likes order and pagination, READY-only likes, idempotent follow/unfollow with artist events, saved albums
+
+**Assumptions:** D46–D53.
