@@ -49,6 +49,11 @@ class CadenceApiApplicationIT extends IntegrationTest {
     }
 
     @Test
+    void devPlayerIsNotServedWithoutTheDevProfile() {
+        assertThat(http.getForEntity("/dev/player.html", String.class).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
     void unauthenticatedRequestReturnsProblemDetail() {
         ResponseEntity<JsonNode> response = http.getForEntity("/api/v1/does-not-exist", JsonNode.class);
 

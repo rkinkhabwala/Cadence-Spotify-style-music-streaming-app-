@@ -1,0 +1,7 @@
+**/target/
+.git/
+.env
+secrets/
+seed-audio/
+node_modules/
+*.log

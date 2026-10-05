@@ -21,6 +21,12 @@ spring:
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      # one CPU-heavy job at a time; allow long transcodes between polls
+      max-poll-records: 1
+      properties:
+        max.poll.interval.ms: 900000
+    listener:
+      concurrency: ${CADENCE_TRANSCODER_CONCURRENCY:1}
 
 server:
   port: ${CADENCE_TRANSCODER_PORT:8081}
@@ -34,3 +40,17 @@ management:
     health:
       probes:
         enabled: true
+
+cadence:
+  s3:
+    endpoint: ${CADENCE_S3_ENDPOINT:http://localhost:9000}
+    region: ${CADENCE_S3_REGION:us-east-1}
+    access-key: ${CADENCE_S3_ACCESS_KEY:}
+    secret-key: ${CADENCE_S3_SECRET_KEY:}
+    hls-bucket: ${CADENCE_S3_HLS_BUCKET:cadence-hls}
+  transcoder:
+    ffmpeg-path: ${CADENCE_FFMPEG_PATH:ffmpeg}
+    ffprobe-path: ${CADENCE_FFPROBE_PATH:ffprobe}
+    timeout: ${CADENCE_TRANSCODE_TIMEOUT:10m}
+    # empty = java.io.tmpdir
+    work-dir: ${CADENCE_TRANSCODER_WORK_DIR:}

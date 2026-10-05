@@ -35,9 +35,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(CadenceException.class)
     ResponseEntity<ProblemDetail> handleCadence(CadenceException ex) {
         ResponseEntity.BodyBuilder response = ResponseEntity.status(ex.status());
-        if (ex instanceof TooManyRequestsException tooMany) {
-            response.header(HttpHeaders.RETRY_AFTER, Long.toString(tooMany.retryAfterSeconds()));
-        }
+        ex.headers().forEach(response::header);
         return response.body(Problems.of(ex.status(), ex.code(), ex.getMessage()));
     }
 

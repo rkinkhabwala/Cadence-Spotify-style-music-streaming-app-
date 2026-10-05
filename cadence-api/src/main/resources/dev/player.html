@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cadence dev player</title>
+  <!-- dev profile only: verifies POST /playback + HLS manifests with hls.js -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.13/dist/hls.min.js"></script>
+  <style>
+    :root { color-scheme: dark; --bg: #121212; --panel: #1e1e1e; --text: #eee; --muted: #a7a7a7; --accent: #1db954; }
+    body { margin: 0; padding: 16px; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 0 auto; display: grid; gap: 16px; }
+    section { background: var(--panel); border-radius: 8px; padding: 16px; }
+    h1 { font-size: 20px; margin: 0; } h2 { font-size: 15px; margin: 0 0 8px; color: var(--muted); }
+    input, select, button { font: inherit; padding: 6px 10px; border-radius: 4px; border: 1px solid #333; background: #2a2a2a; color: var(--text); }
+    button { background: var(--accent); color: #000; border: 0; cursor: pointer; font-weight: 600; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    input { flex: 1 1 200px; min-width: 0; }
+    audio { width: 100%; margin-top: 8px; }
+    pre { white-space: pre-wrap; word-break: break-all; color: var(--muted); max-height: 240px; overflow: auto; margin: 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Cadence dev player</h1>
+  <section>
+    <h2>1. Sign in</h2>
+    <div class="row">
+      <input id="email" placeholder="email" autocomplete="username">
+      <input id="password" type="password" placeholder="password" autocomplete="current-password">
+      <button id="login">Log in</button>
+    </div>
+  </section>
+  <section>
+    <h2>2. Pick a track</h2>
+    <div class="row">
+      <select id="tracks"><option value="">(admins: load READY tracks)</option></select>
+      <button id="load">Load READY tracks</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input id="trackId" placeholder="…or paste a track id">
+      <button id="play">Play</button>
+    </div>
+  </section>
+  <section>
+    <h2>3. Listen (seek with the scrubber or the buttons)</h2>
+    <audio id="audio" controls></audio>
+    <div class="row">
+      <button data-seek="-10">−10 s</button><button data-seek="10">+10 s</button><button data-seek="30">+30 s</button>
+      <span id="level"></span>
+    </div>
+  </section>
+  <section><h2>Log</h2><pre id="log"></pre></section>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const log = (msg) => { $('log').textContent = new Date().toISOString().slice(11, 19) + ' ' + msg + '\n' + $('log').textContent; };
+  let token = null, hls = null;
+
+  async function api(method, path, body) {
+    const res = await fetch('/api/v1' + path, {
+      method, headers: Object.assign({ 'Content-Type': 'application/json' }, token ? { Authorization: 'Bearer ' + token } : {}),
+      body: body ? JSON.stringify(body) : undefined
+    });
+    const json = res.status === 204 ? null : await res.json();
+    if (!res.ok) throw new Error(res.status + ' ' + (json && (json.detail || json.title)));
+    return json;
+  }
+
+  $('login').onclick = async () => {
+    try {
+      token = (await api('POST', '/auth/login', { email: $('email').value, password: $('password').value })).accessToken;
+      const me = await api('GET', '/me');
+      log('logged in as ' + me.email + ' (' + me.plan + ', ' + me.roles.join('/') + ')');
+    } catch (e) { log('login failed: ' + e.message); }
+  };
+
+  $('load').onclick = async () => {
+    try {
+      const page = await api('GET', '/admin/tracks?status=READY&limit=100');
+      $('tracks').innerHTML = page.items.map(t => `<option value="${t.id}">${t.title} (${Math.round(t.durationMs / 1000)} s)</option>`).join('');
+      $('trackId').value = $('tracks').value;
+      log('loaded ' + page.items.length + ' READY tracks');
+    } catch (e) { log('cannot list tracks (admin only): ' + e.message); }
+  };
+  $('tracks').onchange = () => { $('trackId').value = $('tracks').value; };
+
+  $('play').onclick = async () => {
+    try {
+      const start = await api('POST', '/playback/' + $('trackId').value.trim());
+      log('manifest expires ' + start.expiresAt + ', duration ' + start.durationMs + ' ms');
+      if (hls) hls.destroy();
+      if (Hls.isSupported()) {
+        hls = new Hls();
+        hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => log('renditions: ' + data.levels.map(l => Math.round(l.bitrate / 1000) + ' kbps').join(', ')));
+        hls.on(Hls.Events.LEVEL_SWITCHED, (_, data) => { $('level').textContent = 'playing ' + hls.levels[data.level].url[0].match(/\/(\d+k)\//)[1]; });
+        hls.on(Hls.Events.ERROR, (_, data) => log('hls error: ' + data.type + ' ' + data.details));
+        hls.loadSource(start.manifestUrl);
+        hls.attachMedia($('audio'));
+      } else {
+        $('audio').src = start.manifestUrl; // Safari: native HLS
+      }
+      $('audio').play();
+    } catch (e) { log('playback failed: ' + e.message); }
+  };
+
+  document.querySelectorAll('[data-seek]').forEach(b => b.onclick = () => {
+    $('audio').currentTime = Math.max(0, $('audio').currentTime + Number(b.dataset.seek));
+    log('seek to ' + $('audio').currentTime.toFixed(1) + ' s');
+  });
+</script>
+</body>
+</html>

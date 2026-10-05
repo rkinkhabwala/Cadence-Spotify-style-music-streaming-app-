@@ -100,3 +100,52 @@ Append-only log of completed slices.
   - `UploadIT` (6): real presigned upload, event on Kafka, idempotent complete, URL validation, storage rejecting a wrong size, missing upload, non-audio rejected and deleted, retranscode rules
 
 **Assumptions:** D28–D37.
+
+## Slice 1.4 — Transcoder and streaming
+
+**Plan**
+- `cadence-events`: `HlsLayout`, the shared object-key layout written by the transcoder and read by the API.
+- `cadence-transcoder`:
+  - Consumes `catalog.track-uploaded`, downloads the source, probes duration with `ffprobe`, and runs one FFmpeg pass that writes AAC HLS at 96/160/320 kbps (10 s segments, `master.m3u8`) plus a single-file 160 kbps fallback. A second pass measures EBU R128 loudness.
+  - Uploads to `hls/{trackId}/` with a `result.json` marker (makes duplicates idempotent) and publishes `streaming.track-transcoded` or `-failed`.
+  - `ProcessBuilder` runner with a timeout and captured stderr; the temp dir is always deleted. After retries, infrastructure errors become a `-failed` event.
+- `catalog`: consumer of transcode results (processed-event dedupe plus job-id check) → READY/FAILED with `durationMs` and loudness; emits `entity-changed`.
+- `streaming` context:
+  - `POST /playback/{trackId}`: READY only; returns `{manifestUrl, expiresAt, durationMs}`.
+  - Manifests are served by the API (`/playback/{id}/master.m3u8`, `/playback/{id}/{variant}/index.m3u8`), authorized by short-lived playback JWTs in the URL (`token_use=playback`). The master is filtered by plan (FREE: 96/160 only) and its variant URIs rewritten; variant playlists have segment URIs rewritten to presigned MinIO GETs.
+  - `GET /tracks/{id}/stream`: HTTP Range fallback on the 160 kbps file (206/416).
+  - `/dev/player.html` (dev profile only) using hls.js.
+- Dockerfiles for API and transcoder (the transcoder image includes FFmpeg), plus the Compose profile `app`.
+- Tests:
+  - Unit: playlist rewriting, Range parsing, FFmpeg output parsing
+  - Transcoder IT: a real FFmpeg 10 s sine tone through Kafka and MinIO; failure; duplicate delivery
+  - API ITs: playback and manifests (free vs premium, tokens), Range requests, transcode-result consumer
+
+**Built**
+- `cadence-events`: `HlsLayout`.
+- `cadence-transcoder`:
+  - `TranscodeJobHandler` (idempotent via `result.json`, per-job temp dir always deleted)
+  - `Ffmpeg` (ffprobe audio/duration, one-pass HLS ×3 plus fallback, ebur128 loudness) and `ProcessRunner` (timeout, stderr captured to files)
+  - `HlsStorage` (S3), `ResultPublisher`, and an error handler that publishes `-failed` after 3 retries
+- `catalog`: `TranscodeResultService` and listener (processed-event dedupe, job-id check, `entity-changed` on READY/FAILED).
+- `streaming` context:
+  - Domain: `HlsPlaylists` (master filter, media rewrite) and `ByteRange`
+  - Application: `PlaybackTokens`, `PlaybackService`, `StreamService`
+  - API: `PlaybackController` (POST /playback, master/variant playlists, Range stream) and `DevPlayerConfig` plus `dev/player.html`
+- `common`: `CadenceException.headers()` (Retry-After, Content-Range), API Kafka error handler, permitAll for token-authorized playlists and `/dev/**`.
+- `cadence-api/Dockerfile`, `cadence-transcoder/Dockerfile` (with ffmpeg), `.dockerignore`, Compose profile `app` (`make app`, `make app-down`).
+- FFmpeg 9.0.2 installed with Homebrew (needed by transcoder tests and host runs).
+- **Verified end to end with the containers:** an admin uploaded a real 3-minute MP3 and it was READY after 14.2 s. MinIO holds `master.m3u8`, 3 renditions × 19 segments, `fallback_160k.m4a` and `result.json`. A free user's manifest lists 2 variants, and `ffmpeg -ss 150 -i <manifestUrl>` seeks and decodes through the presigned segments.
+
+**Tests: 122 passing, 0 skipped** (+36).
+- Transcoder:
+  - `FfmpegTest` (4)
+  - `TranscoderIT` (4): real 10 s sine tone → 3 renditions, duration and loudness; duplicate delivery doesn't re-transcode; invalid audio → failed, temp dir clean; missing source → failed
+- API unit tests: `HlsPlaylistsTest` (4), `ByteRangeTest` (11), `DevPlayerPageTest` (1).
+- API integration tests:
+  - `PlaybackIT` (4): free vs premium renditions, presigned segments downloadable, TTL, 403 for 320k, token tamper/track/scope/use checks
+  - `StreamRangeIT` (5): `0-1023`, open-ended, suffix, full, 416 cases, auth and READY
+  - `TranscodeResultIT` (3): exactly once, stale job, failed then retranscode
+  - `CadenceApiApplicationIT` (+1): dev page hidden without the dev profile
+
+**Assumptions:** D38–D45. Notably, segment URLs live 5 min + track duration so long tracks can be seeked (D38).

@@ -97,6 +97,9 @@ cadence:
   catalog:
     max-upload-bytes: 209715200   # 200 MB (spec 6)
     upload-url-ttl: 15m
+  streaming:
+    manifest-url-ttl: 5m
+    segment-url-ttl: 5m
   outbox:
     poll-interval: ${CADENCE_OUTBOX_POLL_INTERVAL:500ms}
     batch-size: 100

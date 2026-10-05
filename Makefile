@@ -6,7 +6,7 @@ export JAVA_HOME
 COMPOSE := docker compose
 INFRA := postgres redis kafka minio kafka-ui
 
-.PHONY: help env keys toolchains up down logs ps seed test build run-api run-transcoder clean
+.PHONY: help env keys toolchains up app app-down down logs ps seed test build run-api run-transcoder clean
 
 help: ## Show targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-16s %s\n", $$1, $$2}'
@@ -24,8 +24,14 @@ up: env ## Start infrastructure (postgres, redis, kafka, minio, kafka-ui) and wa
 	$(COMPOSE) up -d --wait $(INFRA)
 	$(COMPOSE) up --no-log-prefix --exit-code-from minio-init minio-init
 
+app: env keys ## Build and run api + transcoder as containers too (Compose profile "app")
+	$(COMPOSE) --profile app up -d --build --wait api transcoder
+
+app-down: ## Stop the api + transcoder containers (infra keeps running)
+	$(COMPOSE) --profile app stop api transcoder
+
 down: ## Stop infrastructure (keeps volumes; use `docker compose down -v` to wipe data)
-	$(COMPOSE) down
+	$(COMPOSE) --profile app down
 
 logs: ## Follow infrastructure logs
 	$(COMPOSE) logs -f --tail=100
@@ -43,9 +49,9 @@ build: ## Compile and package without tests
 	./mvnw -B -DskipTests package
 
 run-api: env keys ## Run cadence-api on the host (needs `make up`)
-	./mvnw -pl cadence-api -am -DskipTests install -q && ./mvnw -pl cadence-api spring-boot:run
+	./mvnw -pl cadence-api -am -DskipTests install -q && ./mvnw -pl cadence-api spring-boot:run -Dspring-boot.run.profiles=dev
 
-run-transcoder: env ## Run cadence-transcoder on the host (needs `make up`)
+run-transcoder: env ## Run cadence-transcoder on the host (needs `make up` and ffmpeg on PATH)
 	./mvnw -pl cadence-transcoder -am -DskipTests install -q && ./mvnw -pl cadence-transcoder spring-boot:run
 
 clean: ## Remove build output

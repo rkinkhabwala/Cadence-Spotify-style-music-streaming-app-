@@ -137,6 +137,62 @@ services:
       start_period: 20s
     networks: [cadence-net]
 
+  # ---- profile "app": the Cadence services themselves (`make app`) ----
+  api:
+    profiles: [app]
+    build:
+      context: .
+      dockerfile: cadence-api/Dockerfile
+    image: cadence-api:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    env_file: .env
+    environment:
+      # in-network addresses override the host-oriented values in .env
+      CADENCE_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-cadence}
+      CADENCE_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      CADENCE_S3_ENDPOINT: http://minio:9000
+      CADENCE_S3_PUBLIC_ENDPOINT: ${CADENCE_S3_PUBLIC_ENDPOINT:-http://localhost:9000}
+      CADENCE_JWT_PRIVATE_KEY_LOCATION: file:/app/secrets/jwt-private.pem
+      CADENCE_JWT_PUBLIC_KEY_LOCATION: file:/app/secrets/jwt-public.pem
+      CADENCE_API_PORT: "8080"
+      SPRING_PROFILES_ACTIVE: ${CADENCE_API_PROFILES:-dev}
+    volumes:
+      - ./secrets:/app/secrets:ro
+    ports:
+      - "127.0.0.1:${CADENCE_API_PORT:-8080}:8080"
+    networks: [cadence-net]
+
+  transcoder:
+    profiles: [app]
+    build:
+      context: .
+      dockerfile: cadence-transcoder/Dockerfile
+    image: cadence-transcoder:local
+    depends_on:
+      kafka:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    env_file: .env
+    environment:
+      CADENCE_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      CADENCE_S3_ENDPOINT: http://minio:9000
+      CADENCE_TRANSCODER_PORT: "8081"
+      CADENCE_TRANSCODER_WORK_DIR: /tmp/cadence-transcoder
+    ports:
+      - "127.0.0.1:${CADENCE_TRANSCODER_PORT:-8081}:8081"
+    networks: [cadence-net]
+
 networks:
   cadence-net:
     name: cadence-net

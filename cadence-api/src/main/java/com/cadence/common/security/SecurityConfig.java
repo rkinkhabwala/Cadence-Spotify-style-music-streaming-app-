@@ -48,6 +48,10 @@ class SecurityConfig {
                         // catalog: public reads (the Range stream endpoint /tracks/{id}/stream stays authenticated)
                         .requestMatchers(HttpMethod.GET, V1 + "/artists/**", V1 + "/albums/**", V1 + "/tracks/*",
                                 V1 + "/genres").permitAll()
+                        // streaming: playlists are authorized by the signed playback token in their URL
+                        .requestMatchers(HttpMethod.GET, V1 + "/playback/*/master.m3u8", V1 + "/playback/*/*/index.m3u8").permitAll()
+                        // dev-only hls.js test page (the handler exists only with the dev profile)
+                        .requestMatchers(HttpMethod.GET, "/dev/**").permitAll()
                         // admin
                         .requestMatchers(V1 + "/admin/**").hasRole("ADMIN")
                         // ops and docs

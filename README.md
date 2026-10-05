@@ -7,7 +7,7 @@ assumptions, and [`PROGRESS.md`](PROGRESS.md) for what has been built.
 
 ## Status
 
-**Phase 1: slices 1.1–1.3 (skeleton, identity, catalog and uploads) are done.** What works now:
+**Phase 1: slices 1.1–1.4 (skeleton, identity, catalog/uploads, transcoding and streaming) are done.** What works now:
 
 - Multi-module Maven build (`./mvnw`), JDK 21, virtual threads.
 - `cadence-api` boots. It has Flyway (outbox + processed-event tables), `/actuator/health`, Swagger UI,
@@ -23,7 +23,13 @@ assumptions, and [`PROGRESS.md`](PROGRESS.md) for what has been built.
   (presigned PUT straight to MinIO, ≤ 200 MB) → `upload-complete` (size and magic-byte check, then PROCESSING and a
   `catalog.track-uploaded` event via the outbox) → `retranscode`, plus the `GET /admin/tracks?status=` dashboard.
   Every catalog change emits `catalog.entity-changed`.
-- Not built yet: transcoding (tracks stay PROCESSING), playback, library and seed data (slices 1.4–1.6).
+- **Transcoding:** `cadence-transcoder` turns each upload into AAC HLS at 96/160/320 kbps (10 s segments and a master
+  playlist), plus a 160 kbps single file. It measures duration and EBU R128 loudness, and the track becomes READY (or
+  FAILED with a reason). A 3-minute MP3 is READY in about 15 s.
+- **Playback:** `POST /api/v1/playback/{trackId}` → `{manifestUrl, expiresAt, durationMs}`. The API serves the manifests
+  (free users only see 96/160 kbps) with presigned MinIO segment URLs. `GET /api/v1/tracks/{id}/stream` serves HTTP Range
+  requests. A test player lives at http://localhost:8080/dev/player.html (dev profile).
+- Not built yet: library (playlists, likes, follows) and seed data (slices 1.5–1.6).
 
 ## Prerequisites
 
@@ -31,6 +37,8 @@ assumptions, and [`PROGRESS.md`](PROGRESS.md) for what has been built.
   JDK 21 in `~/.m2/toolchains.xml`, and from then on `./mvnw` compiles and tests on JDK 21 whatever your shell's
   `java` is. With [direnv](https://direnv.net), `direnv allow` also puts JDK 21 on your `PATH` via `.envrc`.
 - **Docker** (Docker Desktop or compatible), for Compose and Testcontainers.
+- **FFmpeg** on the `PATH` (`brew install ffmpeg`) to run the transcoder on the host and for its tests. The container
+  image ships its own.
 
 ## Run it
 
@@ -39,7 +47,8 @@ make toolchains        # once per machine: register JDK 21 for Maven
 make keys              # once: generate the dev JWT key pair in secrets/ (git-ignored)
 make up                # creates .env from .env.example if missing, starts infra, waits until healthy
 make run-api           # http://localhost:8080  (Swagger UI: /swagger-ui.html, health: /actuator/health)
-make run-transcoder    # http://localhost:8081/actuator/health
+make run-transcoder    # http://localhost:8081/actuator/health (needs ffmpeg: brew install ffmpeg)
+make app               # …or run api + transcoder as containers (Compose profile "app")
 make down              # stop infra (data kept in volumes; `docker compose down -v` wipes it)
 ```
 
@@ -47,6 +56,7 @@ make down              # stop infra (data kept in volumes; `docker compose down 
 |---|---|---|
 | cadence-api | http://localhost:8080 | REST API under `/api/v1` |
 | cadence-transcoder | http://localhost:8081 | health only |
+| Dev player | http://localhost:8080/dev/player.html | dev profile only (on by default in `make run-api` / `make app`) |
 | PostgreSQL 16 | localhost:5432 | db/user from `.env` |
 | Redis 7 | localhost:6379 | password from `.env` |
 | Kafka (KRaft) | localhost:9092 (host), `kafka:29092` (on `cadence-net`) | |
@@ -62,7 +72,8 @@ the Spring apps read `.env`, which is git-ignored.
 make test              # = ./mvnw verify : unit tests (*Test) + Testcontainers integration tests (*IT)
 ```
 
-Integration tests start their own Postgres, Kafka, Redis and MinIO containers, so they don't need `make up`.
+Integration tests start their own Postgres, Kafka, Redis and MinIO containers (transcoder tests run the real
+`ffmpeg`), so they don't need `make up`.
 
 ### Try the auth API
 
@@ -78,7 +89,7 @@ curl -s localhost:8080/api/v1/me -H "Authorization: Bearer <accessToken>"
 ```
 cadence-events/        shared EventEnvelope, Topics, UuidV7, Jackson config, JSON schema
 cadence-api/           com.cadence.{common, identity, catalog, library, streaming, search, activity}
-cadence-transcoder/    Kafka consumer → FFmpeg → MinIO (stub for now)
+cadence-transcoder/    Kafka consumer → FFmpeg → MinIO
 docker-compose.yml     postgres, redis, kafka, minio (+ bucket init), kafka-ui on network cadence-net
 ```
 
