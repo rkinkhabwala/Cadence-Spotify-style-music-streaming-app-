@@ -7,7 +7,7 @@ assumptions, and [`PROGRESS.md`](PROGRESS.md) for what has been built.
 
 ## Status
 
-**Phase 1 (core backend and playback) is complete** (slices 1.1–1.6). **Phase 2** (search, activity, web client) is in progress; slice 2.1 (search) is done. What works now:
+**Phase 1 (core backend and playback) is complete** (slices 1.1–1.6). **Phase 2** (search, activity, web client) is in progress; slices 2.1 (search) and 2.2 (activity) are done. What works now:
 
 - Multi-module Maven build (`./mvnw`), JDK 21, virtual threads.
 - `cadence-api` boots. It has Flyway (outbox + processed-event tables), `/actuator/health`, Swagger UI,
@@ -37,6 +37,10 @@ assumptions, and [`PROGRESS.md`](PROGRESS.md) for what has been built.
   `GET /api/v1/search?q=&types=&limit=&cursor=` is fuzzy and prefix-aware and grouped by type;
   `GET /api/v1/search/suggest?q=` gives search-as-you-type suggestions ("beatls" finds "The Beatlz"). Both are
   rate-limited to 30/s per user. `POST /api/v1/admin/search/reindex` rebuilds the indices from a full replay.
+- **Activity:** `POST /api/v1/activity/plays` takes playback reports (at 30 s and on completion/skip, one `playId` per
+  playback; idempotent). A play counts toward the track's play count exactly once, when it reaches 30 s.
+  `GET /api/v1/me/recently-played` (last 50 distinct tracks), `GET /api/v1/me/top/tracks?range=short|medium|long`, and
+  `GET /api/v1/home` with shelves: recently played, your top tracks, popular right now (30-day stats), new releases.
 - **Caching:** artist and album pages are cached in Redis for 10 minutes and cleared on every catalog change.
 - **Seed data:** `make seed` loads 5 artists, 10 albums and 20 tracks through the real upload flow, plus a demo listener.
 

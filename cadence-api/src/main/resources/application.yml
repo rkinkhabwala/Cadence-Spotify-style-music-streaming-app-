@@ -113,6 +113,10 @@ cadence:
   streaming:
     manifest-url-ttl: 5m
     segment-url-ttl: 5m
+  activity:
+    # rebuild of the 30-day track popularity read model
+    stats-refresh-interval: ${CADENCE_ACTIVITY_STATS_REFRESH_INTERVAL:5m}
+    stats-initial-delay: 30s
   search:
     # index names are <prefix>-artists, -albums, -tracks, -playlists
     index-prefix: ${CADENCE_SEARCH_INDEX_PREFIX:cadence}

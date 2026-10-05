@@ -1,5 +1,6 @@
 package com.cadence.catalog.application;
 
+import com.cadence.catalog.AlbumSummary;
 import com.cadence.catalog.CatalogQueries;
 import com.cadence.catalog.CatalogRefs.ArtistRef;
 import com.cadence.catalog.TrackStatus;
@@ -26,6 +27,8 @@ import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -48,15 +51,17 @@ public class CatalogReadService implements CatalogQueries {
     private final GenreRepository genres;
     private final TrackSummaries summaries;
     private final CatalogMapper mapper;
+    private final Clock clock;
 
     CatalogReadService(ArtistRepository artists, AlbumRepository albums, TrackRepository tracks, GenreRepository genres,
-                       TrackSummaries summaries, CatalogMapper mapper) {
+                       TrackSummaries summaries, CatalogMapper mapper, Clock clock) {
         this.artists = artists;
         this.albums = albums;
         this.tracks = tracks;
         this.genres = genres;
         this.summaries = summaries;
         this.mapper = mapper;
+        this.clock = clock;
     }
 
     @Cacheable(cacheNames = CatalogCaches.ARTISTS, key = "#id")
@@ -133,6 +138,15 @@ public class CatalogReadService implements CatalogQueries {
         }
         return albums.findAllById(albumIds).stream().collect(Collectors.toMap(Album::getId,
                 a -> new com.cadence.catalog.CatalogRefs.AlbumRef(a.getId(), a.getTitle(), a.getCoverUrl())));
+    }
+
+    @Override
+    public List<AlbumSummary> newReleases(int limit) {
+        List<Album> rows = albums.findNewReleases(LocalDate.now(clock), Limit.of(limit));
+        Map<UUID, Artist> artistById = artists.findAllById(rows.stream().map(Album::getArtistId).collect(Collectors.toSet()))
+                .stream().collect(Collectors.toMap(Artist::getId, Function.identity()));
+        return rows.stream().map(a -> new AlbumSummary(a.getId(), a.getTitle(), a.getType().name(), a.getReleaseDate(),
+                a.getCoverUrl(), new ArtistRef(a.getArtistId(), artistById.get(a.getArtistId()).getName()))).toList();
     }
 
     @Override

@@ -1,6 +1,7 @@
 package com.cadence.catalog;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -16,6 +17,9 @@ public interface CatalogQueries {
 
     /** Album references keyed by id; unknown ids are absent. */
     Map<UUID, CatalogRefs.AlbumRef> findAlbums(Collection<UUID> albumIds);
+
+    /** Released albums (release date today or earlier) with at least one READY track, newest first. */
+    List<AlbumSummary> newReleases(int limit);
 
     boolean artistExists(UUID artistId);
 

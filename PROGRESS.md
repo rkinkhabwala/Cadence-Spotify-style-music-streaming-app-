@@ -262,3 +262,52 @@ Append-only log of completed slices.
 as "name 2" conflict copies during builds (a duplicate `V1__… 2.sql` and missing classes), and the VS Code Java
 extension also compiled into `target/classes`. Its auto-build is now off in `.vscode/settings.json` (local only).
 Verification builds ran on an identical copy of the tree outside iCloud.
+
+## Slice 2.2 — Activity, play counts and home
+
+**Plan**
+- Migration `V5__activity.sql`: `play_events` (one row per playback, keyed by a client-chosen `playId`),
+  `listening_history` (read model: user, track, last played), `track_stats` (read model: plays and unique listeners
+  over 30 days).
+- `cadence-events`: `TrackPlayedPayload` (`playId`, `msPlayed`, `completed`, `skipped`, `source`, `sourceId`) with the
+  30-second stream rule.
+- `activity` context:
+  - `POST /activity/plays`: the client reports one playback at 30 s and again on completion or skip with the same
+    `playId`. Reports merge (max `msPlayed`, sticky flags), so retries and duplicates are idempotent. Each real change
+    updates listening history and writes `activity.track-played` to the outbox (key: user id).
+  - `GET /me/recently-played` (last 50 distinct tracks, newest first), `GET /me/top/tracks?range=short|medium|long`
+    (counted plays in 4 weeks / 6 months / all time).
+  - `GET /home`: shelves *Recently played*, *Your top tracks*, *Popular right now* (track stats) and *New releases*.
+  - Scheduled `track_stats` refresh (every 5 min).
+- `catalog`: consumes `activity.track-played` and increments `play_count` once per play that reaches 30 s, deduplicated
+  by `playId` in `processed_event` within the same transaction. New `CatalogQueries.newReleases`.
+- Tests: unit (play merge rules, ranges). `ActivityIT`: 30 s rule; exactly-once play count under duplicate HTTP and
+  duplicate Kafka delivery; recently played (52 tracks + a replay → 50 distinct, in order); top tracks per range; home
+  shelves; stats; validation/401/404/409. `cadence-e2e` `Phase2AcceptanceIT` for spec 9 Phase 2 AC1–AC4 against the
+  packaged jars.
+
+**Built**
+- `cadence-events`: `TrackPlayedPayload` (30-second `STREAM_THRESHOLD_MS`).
+- Migration `V5__activity.sql`: `play_events`, `listening_history`, `track_stats`.
+- `activity` context:
+  - Domain: `PlayEvent` (merge rules), `PlaySource`, `TopRange`
+  - Infrastructure: `PlayEventRepository` (race-free insert, row lock, top-tracks aggregate), `ListeningHistory` and
+    `TrackStatsStore` (JdbcClient read models)
+  - Application: `PlayService`, `ActivityQueries`, `HomeService`, `TrackStatsService` (scheduled rebuild),
+    `ActivityEvents` (outbox)
+  - API: `ActivityController` (`POST /activity/plays`, `GET /me/recently-played`, `GET /me/top/tracks`),
+    `HomeController` (`GET /home`)
+- `catalog`: `PlayCountService` + `PlayCountListener` (play count +1 per playback reaching 30 s, deduplicated by
+  playId), `AlbumSummary`, `CatalogQueries.newReleases`.
+- `cadence-e2e`: `Phase2AcceptanceIT` (AC1–AC4 against the packaged jars and the real transcoder).
+
+**Tests: 192 passing, 0 skipped** (+20).
+- Unit: `PlayEventTest` (5), `TopRangeTest` (2).
+- Integration: `ActivityIT` (9): exactly-once play count under a client retry, a completion report and duplicate
+  Kafka delivery; plays under 30 s not counted; envelope contents; 52 tracks + replay → last 50 distinct in order;
+  top tracks per range with paging; home shelves (incl. future releases excluded, empty shelves omitted); 30-day stats
+  and expiry; validation/404/409/401; reports without playId.
+- Acceptance: `Phase2AcceptanceIT` (4): fuzzy "beatls", album rename searchable after 984 ms, play counted once despite
+  retry and Kafka redelivery, recently played (51 uploaded tracks) in order.
+
+**Assumptions:** D68–D75.

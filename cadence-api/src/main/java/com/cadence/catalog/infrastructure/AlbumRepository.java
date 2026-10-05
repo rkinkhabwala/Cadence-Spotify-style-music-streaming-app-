@@ -14,6 +14,14 @@ public interface AlbumRepository extends JpaRepository<Album, UUID> {
 
     boolean existsByArtistId(UUID artistId);
 
+    @Query("""
+            select a from Album a
+            where a.releaseDate <= :today
+              and exists (select 1 from Track t where t.albumId = a.id and t.status = com.cadence.catalog.TrackStatus.READY)
+            order by a.releaseDate desc, a.id desc
+            """)
+    List<Album> findNewReleases(@Param("today") LocalDate today, Limit limit);
+
     List<Album> findByArtistIdOrderByReleaseDateDescIdDesc(UUID artistId, Limit limit);
 
     @Query("""

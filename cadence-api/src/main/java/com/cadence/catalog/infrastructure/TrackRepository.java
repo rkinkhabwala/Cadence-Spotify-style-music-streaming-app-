@@ -4,6 +4,7 @@ import com.cadence.catalog.TrackStatus;
 import com.cadence.catalog.domain.Track;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -14,6 +15,11 @@ import java.util.UUID;
 public interface TrackRepository extends JpaRepository<Track, UUID> {
 
     boolean existsByAlbumId(UUID albumId);
+
+    /** Bulk update: no version bump and no updatedAt change, a play is not a catalog edit. @return rows updated */
+    @Modifying
+    @Query("update Track t set t.playCount = t.playCount + 1 where t.id = :id")
+    int incrementPlayCount(@Param("id") UUID id);
 
     @Query("select count(t) > 0 from Track t join t.artists a where a.artistId = :artistId")
     boolean existsByCreditedArtist(@Param("artistId") UUID artistId);
