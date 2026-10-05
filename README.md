@@ -7,7 +7,7 @@ assumptions, and [`PROGRESS.md`](PROGRESS.md) for what has been built.
 
 ## Status
 
-**Phase 1: slices 1.1–1.5 (skeleton, identity, catalog/uploads, transcoding/streaming, library) are done.** What works now:
+**Phase 1 (core backend and playback) is complete**: slices 1.1–1.6. Phase 2 (search, activity, web client) is next. What works now:
 
 - Multi-module Maven build (`./mvnw`), JDK 21, virtual threads.
 - `cadence-api` boots. It has Flyway (outbox + processed-event tables), `/actuator/health`, Swagger UI,
@@ -32,7 +32,7 @@ assumptions, and [`PROGRESS.md`](PROGRESS.md) for what has been built.
 - **Library:** playlists (create, rename with `If-Match`, delete; add at a position, remove, reorder with fractional
   ordering; up to 10,000 tracks; private by default), plus idempotent likes, follows and saved albums. Likes and
   follows emit `library.*` events for the recommender.
-- Not built yet: seed data (slice 1.6).
+- **Seed data:** `make seed` loads 5 artists, 10 albums and 20 tracks through the real upload flow, plus a demo listener.
 
 ## Prerequisites
 
@@ -52,6 +52,8 @@ make up                # creates .env from .env.example if missing, starts infra
 make run-api           # http://localhost:8080  (Swagger UI: /swagger-ui.html, health: /actuator/health)
 make run-transcoder    # http://localhost:8081/actuator/health (needs ffmpeg: brew install ffmpeg)
 make app               # …or run api + transcoder as containers (Compose profile "app")
+make seed              # load the demo catalog through the real upload flow (needs api + transcoder running)
+./scripts/verify-player.sh   # optional: headless-Chrome check that the hls.js page plays and seeks
 make down              # stop infra (data kept in volumes; `docker compose down -v` wipes it)
 ```
 
@@ -76,7 +78,8 @@ make test              # = ./mvnw verify : unit tests (*Test) + Testcontainers i
 ```
 
 Integration tests start their own Postgres, Kafka, Redis and MinIO containers (transcoder tests run the real
-`ffmpeg`), so they don't need `make up`.
+`ffmpeg`). `cadence-e2e` boots the packaged api and transcoder jars as real processes and checks every Phase 1
+acceptance criterion end to end., so they don't need `make up`.
 
 ### Try the auth API
 
@@ -93,6 +96,8 @@ curl -s localhost:8080/api/v1/me -H "Authorization: Bearer <accessToken>"
 cadence-events/        shared EventEnvelope, Topics, UuidV7, Jackson config, JSON schema
 cadence-api/           com.cadence.{common, identity, catalog, library, streaming, search, activity}
 cadence-transcoder/    Kafka consumer → FFmpeg → MinIO
+cadence-e2e/           acceptance tests against the packaged jars (Phase 1 criteria)
+scripts/               toolchains, dev keys, seed.py, verify-player.sh
 docker-compose.yml     postgres, redis, kafka, minio (+ bucket init), kafka-ui on network cadence-net
 ```
 

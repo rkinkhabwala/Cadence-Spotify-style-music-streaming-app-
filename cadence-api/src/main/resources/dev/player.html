@@ -104,6 +104,29 @@
     } catch (e) { log('playback failed: ' + e.message); }
   };
 
+  // Automated browser check (scripts/verify-player.sh): #autotest&token=<access token>&track=<id>
+  // plays, seeks to 60 % of the track and reports in document.title: "AUTOTEST PASS ..." / "AUTOTEST FAIL ...".
+  const params = new URLSearchParams(location.hash.slice(1));
+  if (params.has('autotest')) {
+    const audio = $('audio');
+    const finish = (ok, msg) => { document.title = 'AUTOTEST ' + (ok ? 'PASS ' : 'FAIL ') + msg; log(document.title); };
+    token = params.get('token');
+    $('trackId').value = params.get('track');
+    setTimeout(() => finish(false, 'timeout at ' + audio.currentTime.toFixed(2) + ' s'), 25000);
+    let seekTarget = null;
+    audio.addEventListener('timeupdate', () => {
+      if (seekTarget === null && audio.currentTime > 1) {
+        seekTarget = audio.duration * 0.6;
+        log('played ' + audio.currentTime.toFixed(2) + ' s, seeking to ' + seekTarget.toFixed(2) + ' s');
+        audio.currentTime = seekTarget;
+      } else if (seekTarget !== null && audio.currentTime > seekTarget + 1) {
+        finish(true, 'played and seeked to ' + seekTarget.toFixed(1) + ' s, now at ' + audio.currentTime.toFixed(1)
+          + ' s of ' + audio.duration.toFixed(1) + ' s via ' + ($('level').textContent || 'hls'));
+      }
+    });
+    $('play').onclick();
+  }
+
   document.querySelectorAll('[data-seek]').forEach(b => b.onclick = () => {
     $('audio').currentTime = Math.max(0, $('audio').currentTime + Number(b.dataset.seek));
     log('seek to ' + $('audio').currentTime.toFixed(1) + ' s');

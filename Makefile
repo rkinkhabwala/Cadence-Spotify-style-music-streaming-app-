@@ -39,8 +39,8 @@ logs: ## Follow infrastructure logs
 ps: ## Show service status
 	$(COMPOSE) ps
 
-seed: ## Load demo catalog through the real upload flow (slice 1.6)
-	@echo "Seeding arrives in slice 1.6." && exit 1
+seed: env ## Seed 5 artists, 10 albums, ~20 tracks through the real upload flow (needs api + transcoder running)
+	python3 scripts/seed.py $(ARGS)
 
 test: ## Build and run all unit + Testcontainers integration tests
 	./mvnw -B verify

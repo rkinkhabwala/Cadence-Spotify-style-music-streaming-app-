@@ -182,3 +182,27 @@ Append-only log of completed slices.
   - `LibraryIT` (5): idempotent like/unlike with exactly one event per change, likes order and pagination, READY-only likes, idempotent follow/unfollow with artist events, saved albums
 
 **Assumptions:** D46–D53.
+
+## Slice 1.6 — Seed and Phase 1 acceptance
+
+**Plan**
+- `make seed`: `scripts/seed.py` (generated or user-supplied audio → real upload flow → wait for READY; demo listener).
+- `cadence-e2e`: `Phase1AcceptanceIT` against the packaged jars and Testcontainers.
+- Close the endpoint failure-path gaps.
+- Headless-Chrome check of the hls.js page.
+- Print the Phase 1 checklist.
+
+**Built**
+- `scripts/seed.py` and `make seed`; `seed-audio/` (git-ignored, `.gitkeep`); `CADENCE_DEMO_*` in `.env.example`.
+- `cadence-e2e` module: `CadenceStack` (containers plus api and transcoder child processes), `Http`, `Media` (FFmpeg/ffprobe HLS client), `Phase1AcceptanceIT` (one test per criterion).
+- `EndpointFailurePathsIT` closes the remaining failure-path gaps (admin GET track, reorder errors, auth on library reads, cursors, logout validation, JWKS method).
+- `dev/player.html` autotest mode; `scripts/verify-player.sh`. Dockerfiles copy the new module's POM.
+- Verified manually against Compose:
+  - `make seed` created 5 artists, 10 albums and 20 tracks (mp3/flac/wav/m4a), all READY, plus the demo listener.
+  - `verify-player.sh`: headless Chrome played the 160k rendition with hls.js and seeked to 12.6 s (PASS).
+
+**Tests: 151 passing, 0 skipped** (+11).
+- `cadence-events` 10; `cadence-api` 51 unit + 76 integration; `cadence-transcoder` 4 + 4; `cadence-e2e` 6.
+- In the acceptance run, a 30 s MP3 was READY 2.7 s after upload-complete.
+
+**Assumptions:** D54–D57.
