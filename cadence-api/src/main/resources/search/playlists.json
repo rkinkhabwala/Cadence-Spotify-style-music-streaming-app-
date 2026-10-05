@@ -1,0 +1,51 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "analysis": {
+      "analyzer": {
+        "folding": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": [
+            "lowercase",
+            "asciifolding"
+          ]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "id": {
+        "type": "keyword"
+      },
+      "name": {
+        "type": "text",
+        "analyzer": "folding",
+        "fields": {
+          "sayt": {
+            "type": "search_as_you_type",
+            "analyzer": "folding"
+          }
+        }
+      },
+      "description": {
+        "type": "text",
+        "analyzer": "folding"
+      },
+      "coverUrl": {
+        "type": "keyword",
+        "index": false
+      },
+      "ownerId": {
+        "type": "keyword"
+      },
+      "trackCount": {
+        "type": "integer",
+        "index": false
+      }
+    }
+  }
+}

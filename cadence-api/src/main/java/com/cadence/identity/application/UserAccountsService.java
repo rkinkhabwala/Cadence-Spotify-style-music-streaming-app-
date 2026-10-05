@@ -9,7 +9,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
+import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import java.util.UUID;
 
 @Service
@@ -33,6 +36,15 @@ class UserAccountsService implements UserAccounts {
     @Transactional(readOnly = true)
     public Optional<UUID> findIdByEmail(String email) {
         return users.findByEmail(User.normalizeEmail(email)).map(User::getId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<UUID, String> displayNames(Collection<UUID> userIds) {
+        if (userIds.isEmpty()) {
+            return Map.of();
+        }
+        return users.findAllById(userIds).stream().collect(Collectors.toMap(User::getId, User::getDisplayName));
     }
 
     @Override

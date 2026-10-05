@@ -7,7 +7,7 @@ assumptions, and [`PROGRESS.md`](PROGRESS.md) for what has been built.
 
 ## Status
 
-**Phase 1 (core backend and playback) is complete**: slices 1.1–1.6. Phase 2 (search, activity, web client) is next. What works now:
+**Phase 1 (core backend and playback) is complete** (slices 1.1–1.6). **Phase 2** (search, activity, web client) is in progress; slice 2.1 (search) is done. What works now:
 
 - Multi-module Maven build (`./mvnw`), JDK 21, virtual threads.
 - `cadence-api` boots. It has Flyway (outbox + processed-event tables), `/actuator/health`, Swagger UI,
@@ -32,6 +32,12 @@ assumptions, and [`PROGRESS.md`](PROGRESS.md) for what has been built.
 - **Library:** playlists (create, rename with `If-Match`, delete; add at a position, remove, reorder with fractional
   ordering; up to 10,000 tracks; private by default), plus idempotent likes, follows and saved albums. Likes and
   follows emit `library.*` events for the recommender.
+- **Search:** Elasticsearch indices of artists, albums, READY tracks and public playlists, kept current from
+  `catalog.entity-changed` / `library.playlist-changed` events (edits are searchable within about a second).
+  `GET /api/v1/search?q=&types=&limit=&cursor=` is fuzzy and prefix-aware and grouped by type;
+  `GET /api/v1/search/suggest?q=` gives search-as-you-type suggestions ("beatls" finds "The Beatlz"). Both are
+  rate-limited to 30/s per user. `POST /api/v1/admin/search/reindex` rebuilds the indices from a full replay.
+- **Caching:** artist and album pages are cached in Redis for 10 minutes and cleared on every catalog change.
 - **Seed data:** `make seed` loads 5 artists, 10 albums and 20 tracks through the real upload flow, plus a demo listener.
 
 ## Prerequisites
@@ -48,7 +54,7 @@ assumptions, and [`PROGRESS.md`](PROGRESS.md) for what has been built.
 ```bash
 make toolchains        # once per machine: register JDK 21 for Maven
 make keys              # once: generate the dev JWT key pair in secrets/ (git-ignored)
-make up                # creates .env from .env.example if missing, starts infra, waits until healthy
+make up                # creates .env from .env.example if missing, starts infra (incl. Elasticsearch), waits until healthy
 make run-api           # http://localhost:8080  (Swagger UI: /swagger-ui.html, health: /actuator/health)
 make run-transcoder    # http://localhost:8081/actuator/health (needs ffmpeg: brew install ffmpeg)
 make app               # …or run api + transcoder as containers (Compose profile "app")
@@ -66,6 +72,7 @@ make down              # stop infra (data kept in volumes; `docker compose down 
 | Redis 7 | localhost:6379 | password from `.env` |
 | Kafka (KRaft) | localhost:9092 (host), `kafka:29092` (on `cadence-net`) | |
 | MinIO | http://localhost:9000 (S3), http://localhost:9001 (console) | private buckets `cadence-raw`, `cadence-hls`; apps use the least-privilege `cadence-app` user |
+| Elasticsearch 8 | http://localhost:9200 | user `elastic`, password `ELASTIC_PASSWORD` from `.env` |
 | kafka-ui | http://localhost:8090 | |
 
 All config comes from environment variables, documented in [`.env.example`](.env.example). Both Compose and
@@ -77,9 +84,9 @@ the Spring apps read `.env`, which is git-ignored.
 make test              # = ./mvnw verify : unit tests (*Test) + Testcontainers integration tests (*IT)
 ```
 
-Integration tests start their own Postgres, Kafka, Redis and MinIO containers (transcoder tests run the real
+Integration tests start their own Postgres, Kafka, Redis, MinIO and Elasticsearch containers (transcoder tests run the real
 `ffmpeg`). `cadence-e2e` boots the packaged api and transcoder jars as real processes and checks every Phase 1
-acceptance criterion end to end., so they don't need `make up`.
+acceptance criterion end to end. None of this needs `make up`.
 
 ### Try the auth API
 
@@ -98,7 +105,7 @@ cadence-api/           com.cadence.{common, identity, catalog, library, streamin
 cadence-transcoder/    Kafka consumer → FFmpeg → MinIO
 cadence-e2e/           acceptance tests against the packaged jars (Phase 1 criteria)
 scripts/               toolchains, dev keys, seed.py, verify-player.sh
-docker-compose.yml     postgres, redis, kafka, minio (+ bucket init), kafka-ui on network cadence-net
+docker-compose.yml     postgres, redis, kafka, minio (+ bucket init), elasticsearch, kafka-ui on network cadence-net
 ```
 
 Bounded contexts talk only through public interfaces and outbox events. `ModularityTest` (Spring Modulith)

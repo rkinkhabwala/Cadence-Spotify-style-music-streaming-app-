@@ -7,6 +7,7 @@ import org.springframework.test.context.DynamicPropertyRegistrar;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.elasticsearch.ElasticsearchContainer;
 import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
@@ -44,6 +45,15 @@ public class TestcontainersConfiguration {
             registry.add("cadence.s3.secret-key", minio::getPassword);
             registry.add("cadence.s3.auto-create-buckets", () -> "true");
         };
+    }
+
+    /** Same version as docker-compose.yml; security off in tests (Compose uses basic auth). */
+    @Bean
+    @ServiceConnection
+    ElasticsearchContainer elasticsearch() {
+        return new ElasticsearchContainer(DockerImageName.parse("docker.elastic.co/elasticsearch/elasticsearch:8.19.22"))
+                .withEnv("xpack.security.enabled", "false")
+                .withEnv("ES_JAVA_OPTS", "-Xms512m -Xmx512m");
     }
 
     @Bean

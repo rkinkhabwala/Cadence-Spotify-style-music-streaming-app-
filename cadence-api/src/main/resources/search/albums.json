@@ -1,0 +1,59 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "analysis": {
+      "analyzer": {
+        "folding": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": [
+            "lowercase",
+            "asciifolding"
+          ]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "id": {
+        "type": "keyword"
+      },
+      "title": {
+        "type": "text",
+        "analyzer": "folding",
+        "fields": {
+          "sayt": {
+            "type": "search_as_you_type",
+            "analyzer": "folding"
+          }
+        }
+      },
+      "type": {
+        "type": "keyword"
+      },
+      "releaseDate": {
+        "type": "date"
+      },
+      "coverUrl": {
+        "type": "keyword",
+        "index": false
+      },
+      "artistId": {
+        "type": "keyword"
+      },
+      "artistName": {
+        "type": "text",
+        "analyzer": "folding",
+        "fields": {
+          "sayt": {
+            "type": "search_as_you_type",
+            "analyzer": "folding"
+          }
+        }
+      }
+    }
+  }
+}

@@ -9,6 +9,7 @@ import com.cadence.common.error.PreconditionFailedException;
 import com.cadence.common.pagination.Cursor;
 import com.cadence.common.pagination.CursorPage;
 import com.cadence.common.pagination.CursorRequest;
+import com.cadence.events.EntityChangedPayload.Action;
 import com.cadence.library.application.LibraryViews.PlaylistDetail;
 import com.cadence.library.application.LibraryViews.PlaylistItem;
 import com.cadence.library.application.LibraryViews.PlaylistView;
@@ -46,14 +47,16 @@ public class PlaylistService {
     private final PlaylistTrackRepository playlistTracks;
     private final CatalogQueries catalog;
     private final LibraryMapper mapper;
+    private final LibraryEvents events;
     private final Clock clock;
 
     PlaylistService(PlaylistRepository playlists, PlaylistTrackRepository playlistTracks, CatalogQueries catalog,
-                    LibraryMapper mapper, Clock clock) {
+                    LibraryMapper mapper, LibraryEvents events, Clock clock) {
         this.playlists = playlists;
         this.playlistTracks = playlistTracks;
         this.catalog = catalog;
         this.mapper = mapper;
+        this.events = events;
         this.clock = clock;
     }
 
@@ -62,7 +65,9 @@ public class PlaylistService {
     public PlaylistView create(UUID ownerId, String name, String description, Visibility visibility, Boolean collaborative) {
         Playlist playlist = playlists.saveAndFlush(new Playlist(ownerId, name, description, visibility,
                 Boolean.TRUE.equals(collaborative), clock.instant()));
-        return mapper.toView(playlist);
+        PlaylistView view = mapper.toView(playlist);
+        events.playlistChanged(view, view.id(), Action.CREATED, view.createdAt());
+        return view;
     }
 
     /** The caller's own playlists, newest first (followed playlists: see DECISIONS.md D49). */
@@ -102,7 +107,9 @@ public class PlaylistService {
         requireVersion(playlist, expectedVersion);
         playlist.update(name, description, visibility, collaborative, clock.instant());
         flush(playlist, expectedVersion);
-        return mapper.toView(playlist);
+        PlaylistView view = mapper.toView(playlist);
+        events.playlistChanged(view, view.id(), Action.UPDATED, view.updatedAt());
+        return view;
     }
 
     @Transactional
@@ -110,6 +117,7 @@ public class PlaylistService {
         Playlist playlist = load(playlistId);
         playlist.requireOwner(userId);
         playlists.delete(playlist);
+        events.playlistChanged(null, playlistId, Action.DELETED, clock.instant());
     }
 
     /**

@@ -206,3 +206,59 @@ Append-only log of completed slices.
 - In the acceptance run, a 30 s MP3 was READY 2.7 s after upload-complete.
 
 **Assumptions:** D54–D57.
+
+## Slice 2.1 — Search and catalog caching
+
+**Plan**
+- Infra: Elasticsearch 8.19.22 in Compose (single node, basic auth, 512 MB heap, `127.0.0.1:9200`) and in Testcontainers;
+  `spring-boot` Elasticsearch client (`elasticsearch-java`). Config via `CADENCE_ELASTICSEARCH_*` env vars.
+- `search` context (owns the ES indices `cadence-artists`, `cadence-albums`, `cadence-tracks`, `cadence-playlists`):
+  - Index setup at startup (folding analyzer, `search_as_you_type` subfields). When an index is newly created, the
+    catalog and public playlists are replayed through the outbox so existing data gets indexed.
+  - `SearchIndexer`: consumes `catalog.entity-changed` (artists, albums, READY tracks only) and a new
+    `library.playlist-changed` (PUBLIC playlists only). Full-document upserts make it idempotent; artist/album renames are
+    propagated into denormalized track/album docs with `update_by_query`.
+  - `GET /search?q=&types=&limit=&cursor=`: fuzzy + prefix, grouped by type; track hits hydrated from the catalog.
+  - `GET /search/suggest?q=`: mixed top suggestions (artists, tracks, albums, playlists).
+  - Rate limit 30/s per user on both (spec 6). `POST /admin/search/reindex` rebuilds the indices.
+- `catalog`: public `CatalogReplay` (republishes `entity-changed` for every entity). Redis cache for artist and album pages
+  (TTL 10 min, cleared after commit on every catalog change, fails open).
+- `library`: `library.playlist-changed` events on create/update/delete; public `PlaylistReplay`.
+- `identity`: `UserAccounts.displayNames` (playlist owner names in search results).
+- Seed: fuzzy-search fixture artist renamed to "The Beatlz".
+- Tests: unit tests for query/type parsing and document mapping. `SearchIT` covers "beatls" fuzzy suggestions, an edit
+  reflected within 5 s, rename propagation, READY-only tracks, playlists, types/limit/cursor, validation, 401/403/429,
+  suggest latency and reindex. `CatalogCacheIT` covers cache hits and eviction.
+
+**Built**
+- Compose `elasticsearch` 8.19.22 (basic auth, health-checked, `es-data` volume); the `api` container waits for it. New
+  `.env` keys: `ELASTIC_PASSWORD`, `ELASTICSEARCH_PORT`, `CADENCE_ELASTICSEARCH_URIS`, `CADENCE_ELASTICSEARCH_USERNAME`,
+  `CADENCE_SEARCH_INDEX_PREFIX`.
+- `search` context:
+  - Domain: `SearchType`, `SearchDocuments` (snapshot → document mapping, READY/PUBLIC rules), `SearchUnavailableException`
+  - `SearchStore`: Elasticsearch index lifecycle, upserts, real-time gets, rename propagation via `update_by_query`,
+    `_msearch` search and the cross-index suggest query
+  - Application: `SearchIndexer`, `SearchIndexAdmin` (create + replay), `SearchService`, MapStruct `SearchMapper`
+  - `SearchController` (`/search`, `/search/suggest`), `SearchAdminController` (`/admin/search/reindex`), plus an
+    indexer listener with its own never-skip retry policy
+- `catalog`: `CatalogReplay`; Redis page cache (`CatalogCacheConfig`, `@Cacheable` artist/album, after-commit clearing
+  in `CatalogEvents`); `common.config.CacheConfig` (fail-open cache errors).
+- `library`: `library.playlist-changed` events, `PlaylistReplay`. `identity`: `UserAccounts.displayNames`.
+- `cadence-e2e`: the stack now includes Elasticsearch.
+- Seed: fixture artist "The Beatlz", with in-place rename of the Phase 1 name.
+
+**Tests: 172 passing, 0 skipped** (+21).
+- Unit: `SearchTypeTest` (3), `SearchDocumentsTest` (5).
+- Integration:
+  - `SearchIT` (10): "beatls" → The Beatlz; rename searchable within 5 s; READY-only tracks with hydrated hits and
+    removal on delete; artist/album renames propagated into tracks; grouping, types, per-type cursor paging;
+    validation (blank/long q, bad type, cursor with several types, bad cursor) and 401; public vs private playlists
+    with owner names; 429 rate limit with `Retry-After`; suggest p95 < 100 ms; reindex (403 listener / 202 admin)
+  - `CatalogCacheIT` (3): cache hit and TTL, eviction on artist/track/artist-rename changes, 404s not cached
+
+**Assumptions:** D58–D67.
+
+**Environment note:** the repo is on an iCloud-synced Desktop. iCloud restored deleted build files under `target/`
+as "name 2" conflict copies during builds (a duplicate `V1__… 2.sql` and missing classes), and the VS Code Java
+extension also compiled into `target/classes`. Its auto-build is now off in `.vscode/settings.json` (local only).
+Verification builds ran on an identical copy of the tree outside iCloud.

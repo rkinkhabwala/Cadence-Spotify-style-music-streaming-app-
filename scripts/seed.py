@@ -21,9 +21,12 @@ ROOT = Path(__file__).resolve().parent.parent
 AUDIO_DIR = ROOT / "seed-audio"
 FORMATS = {"mp3": "audio/mpeg", "flac": "audio/flac", "wav": "audio/wav", "m4a": "audio/mp4"}
 
-# 5 artists x 2 albums x 2 tracks. "The Beatles Revival" doubles as the fuzzy-search fixture for Phase 2 ("beatls").
+# 5 artists x 2 albums x 2 tracks. "The Beatlz" doubles as the fuzzy-search fixture for Phase 2: typing "beatls"
+# must suggest it, which only works through fuzzy matching (one substituted letter).
+FIXTURE_ARTIST = "The Beatlz"
+LEGACY_FIXTURE_ARTIST = "The Beatles Revival"  # name used by Phase 1 seeds
 CATALOG = [
-    ("The Beatles Revival", "Four-piece tribute to sixties pop", [("Abbey Lane", "1969-09-26", ["Rock", "Pop"]),
+    (FIXTURE_ARTIST, "Four-piece tribute to sixties pop", [("Abbey Lane", "1969-09-26", ["Rock", "Pop"]),
                                                                     ("Yellow Harbor", "1966-08-05", ["Rock"])]),
     ("Nova Lights", "Synthwave duo from Lisbon", [("Neon Tides", "2021-03-12", ["Synthwave", "Electronic"]),
                                                   ("Afterglow", "2023-11-03", ["Synthwave"])]),
@@ -127,6 +130,23 @@ def admin_titles(token):
             return titles
 
 
+def rename_legacy_fixture(token):
+    """Catalogs seeded in Phase 1 have the fixture artist under its old name; rename it in place."""
+    album_ids, cursor = set(), None
+    while True:
+        _, page = call("GET", "/api/v1/admin/tracks?limit=100" + (f"&cursor={cursor}" if cursor else ""), None, token)
+        album_ids.update(t["albumId"] for t in page["items"])
+        cursor = page["nextCursor"]
+        if not cursor:
+            break
+    for album_id in album_ids:
+        _, album = call("GET", f"/api/v1/albums/{album_id}")
+        if album["artist"]["name"] == LEGACY_FIXTURE_ARTIST:
+            call("PATCH", f"/api/v1/admin/artists/{album['artist']['id']}", {"name": FIXTURE_ARTIST}, token)
+            print(f"Renamed artist '{LEGACY_FIXTURE_ARTIST}' to '{FIXTURE_ARTIST}' (fuzzy-search fixture)")
+            return
+
+
 def main():
     force = "--force" in sys.argv
     try:
@@ -140,6 +160,7 @@ def main():
     files = ensure_audio()
     titles = [title_of(p) for p in files]
     if not force and set(titles) <= admin_titles(token):
+        rename_legacy_fixture(token)
         print("Catalog already seeded (use `make seed ARGS=--force` to add another copy).")
         return
 

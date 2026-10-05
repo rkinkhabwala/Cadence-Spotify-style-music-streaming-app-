@@ -1,6 +1,7 @@
 package com.cadence.library.infrastructure;
 
 import com.cadence.library.domain.Playlist;
+import com.cadence.library.domain.Visibility;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -10,6 +11,8 @@ import java.util.List;
 import java.util.UUID;
 
 public interface PlaylistRepository extends JpaRepository<Playlist, UUID> {
+
+    List<Playlist> findByVisibility(Visibility visibility);
 
     List<Playlist> findByOwnerIdOrderByIdDesc(UUID ownerId, Limit limit);
 

@@ -12,6 +12,8 @@ public final class Topics {
     public static final String ACTIVITY_TRACK_PLAYED = "activity.track-played";
     public static final String LIBRARY_TRACK_LIKED = "library.track-liked";
     public static final String LIBRARY_ARTIST_FOLLOWED = "library.artist-followed";
+    /** Playlist snapshots ({@link EntityChangedPayload}) for search; keyed by playlist id. */
+    public static final String LIBRARY_PLAYLIST_CHANGED = "library.playlist-changed";
 
     public static final List<String> ALL = List.of(
             CATALOG_TRACK_UPLOADED,
@@ -20,7 +22,8 @@ public final class Topics {
             STREAMING_TRACK_TRANSCODE_FAILED,
             ACTIVITY_TRACK_PLAYED,
             LIBRARY_TRACK_LIKED,
-            LIBRARY_ARTIST_FOLLOWED);
+            LIBRARY_ARTIST_FOLLOWED,
+            LIBRARY_PLAYLIST_CHANGED);
 
     private Topics() {
     }

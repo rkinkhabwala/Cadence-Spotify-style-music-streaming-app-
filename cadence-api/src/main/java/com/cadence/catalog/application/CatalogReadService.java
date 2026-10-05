@@ -21,6 +21,7 @@ import com.cadence.common.error.NotFoundException;
 import com.cadence.common.pagination.Cursor;
 import com.cadence.common.pagination.CursorPage;
 import com.cadence.common.pagination.CursorRequest;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -58,6 +59,7 @@ public class CatalogReadService implements CatalogQueries {
         this.mapper = mapper;
     }
 
+    @Cacheable(cacheNames = CatalogCaches.ARTISTS, key = "#id")
     public ArtistDetail artist(UUID id) {
         Artist artist = artists.findById(id).orElseThrow(() -> new NotFoundException("Artist", id));
         List<TrackSummary> top = summaries.of(tracks.findTopReadyByArtist(id, Limit.of(TOP_TRACKS)));
@@ -77,6 +79,7 @@ public class CatalogReadService implements CatalogQueries {
         return CursorPage.of(rows, page, a -> Cursor.of(a.getReleaseDate(), a.getId())).map(a -> mapper.toView(a, ref));
     }
 
+    @Cacheable(cacheNames = CatalogCaches.ALBUMS, key = "#id")
     public AlbumDetail album(UUID id) {
         Album album = albums.findById(id).orElseThrow(() -> new NotFoundException("Album", id));
         Artist artist = artists.getReferenceById(album.getArtistId());

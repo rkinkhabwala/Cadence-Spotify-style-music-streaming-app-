@@ -3,6 +3,7 @@ package com.cadence.e2e;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.elasticsearch.ElasticsearchContainer;
 import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.lifecycle.Startables;
 import org.testcontainers.utility.DockerImageName;
@@ -43,6 +44,10 @@ final class CadenceStack implements AutoCloseable {
     final GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis:7-alpine")).withExposedPorts(6379);
     final MinIOContainer minio = new MinIOContainer(DockerImageName.parse("pgsty/minio:RELEASE.2026-08-04T00-00-00Z")
             .asCompatibleSubstituteFor("minio/minio"));
+    final ElasticsearchContainer elasticsearch = new ElasticsearchContainer(
+            DockerImageName.parse("docker.elastic.co/elasticsearch/elasticsearch:8.19.22"))
+            .withEnv("xpack.security.enabled", "false")
+            .withEnv("ES_JAVA_OPTS", "-Xms512m -Xmx512m");
 
     final KeyPair signingKeys;
     final int apiPort;
@@ -59,7 +64,7 @@ final class CadenceStack implements AutoCloseable {
     static CadenceStack start() throws Exception {
         CadenceStack stack = new CadenceStack();
         try {
-            Startables.deepStart(stack.postgres, stack.kafka, stack.redis, stack.minio).join();
+            Startables.deepStart(stack.postgres, stack.kafka, stack.redis, stack.minio, stack.elasticsearch).join();
             stack.startApps();
             return stack;
         } catch (Exception | Error e) {
@@ -96,6 +101,8 @@ final class CadenceStack implements AutoCloseable {
                 "--spring.data.redis.host=" + redis.getHost(),
                 "--spring.data.redis.port=" + redis.getMappedPort(6379),
                 "--spring.data.redis.password=",
+                "--spring.elasticsearch.uris=http://" + elasticsearch.getHttpHostAddress(),
+                "--spring.elasticsearch.password=",
                 "--cadence.s3.endpoint=" + s3,
                 "--cadence.s3.public-endpoint=" + s3,
                 "--cadence.s3.access-key=" + minio.getUserName(),
@@ -165,7 +172,7 @@ final class CadenceStack implements AutoCloseable {
                 Thread.currentThread().interrupt();
             }
         });
-        List.of(minio, redis, kafka, postgres).forEach(GenericContainer::stop);
+        List.of(elasticsearch, minio, redis, kafka, postgres).forEach(GenericContainer::stop);
     }
 
     private static KeyPair generateKeys() throws Exception {

@@ -1,0 +1,71 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "analysis": {
+      "analyzer": {
+        "folding": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": [
+            "lowercase",
+            "asciifolding"
+          ]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "id": {
+        "type": "keyword"
+      },
+      "title": {
+        "type": "text",
+        "analyzer": "folding",
+        "fields": {
+          "sayt": {
+            "type": "search_as_you_type",
+            "analyzer": "folding"
+          }
+        }
+      },
+      "durationMs": {
+        "type": "integer",
+        "index": false
+      },
+      "explicit": {
+        "type": "boolean"
+      },
+      "albumId": {
+        "type": "keyword"
+      },
+      "albumTitle": {
+        "type": "text",
+        "analyzer": "folding"
+      },
+      "albumCoverUrl": {
+        "type": "keyword",
+        "index": false
+      },
+      "artists": {
+        "properties": {
+          "id": {
+            "type": "keyword"
+          },
+          "name": {
+            "type": "text",
+            "analyzer": "folding",
+            "fields": {
+              "sayt": {
+                "type": "search_as_you_type",
+                "analyzer": "folding"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

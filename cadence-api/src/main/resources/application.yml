@@ -43,6 +43,16 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
+      # fail fast (caches and rate limits fail open) instead of Lettuce's 60 s default
+      timeout: 500ms
+  cache:
+    type: redis
+  elasticsearch:
+    uris: ${CADENCE_ELASTICSEARCH_URIS:http://localhost:9200}
+    username: ${CADENCE_ELASTICSEARCH_USERNAME:elastic}
+    password: ${ELASTIC_PASSWORD:}
+    connection-timeout: 2s
+    socket-timeout: 10s
   mvc:
     problemdetails:
       enabled: true
@@ -84,6 +94,9 @@ cadence:
     login:
       capacity: 5
       period: 1m
+    search:              # spec 6: 30/s per user (search and suggest share it)
+      capacity: 30
+      period: 1s
   s3:
     # endpoint the API talks to; public-endpoint is what browsers/players see in presigned URLs
     endpoint: ${CADENCE_S3_ENDPOINT:http://localhost:9000}
@@ -100,6 +113,9 @@ cadence:
   streaming:
     manifest-url-ttl: 5m
     segment-url-ttl: 5m
+  search:
+    # index names are <prefix>-artists, -albums, -tracks, -playlists
+    index-prefix: ${CADENCE_SEARCH_INDEX_PREFIX:cadence}
   outbox:
     poll-interval: ${CADENCE_OUTBOX_POLL_INTERVAL:500ms}
     batch-size: 100

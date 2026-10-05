@@ -74,12 +74,25 @@ public class StreamingFixtures {
         CatalogFixtures catalog = new CatalogFixtures(api, adminToken);
         UUID album = catalog.album(catalog.artist(title + " Artist"), title + " Album", java.time.LocalDate.of(2025, 1, 1));
         UUID track = catalog.track(album, title, 1);
+        startProcessing(track);
+        return track;
+    }
+
+    /** Uploads a (fake) MP3 for an existing DRAFT track and completes the upload: the track becomes PROCESSING. */
+    public void startProcessing(UUID track) {
         byte[] mp3 = ("ID3" + "x".repeat(64)).getBytes(StandardCharsets.US_ASCII);
         String key = api.post("/api/v1/admin/tracks/" + track + "/upload-url",
                 Map.of("extension", "mp3", "sizeBytes", mp3.length), adminToken).getBody().get("objectKey").asText();
         storage.put(storage.rawBucket(), key, mp3, "audio/mpeg");
         api.post("/api/v1/admin/tracks/" + track + "/upload-complete", null, adminToken);
-        return track;
+    }
+
+    /** Makes an existing DRAFT track READY through the production event path. */
+    public void makeReady(UUID track) {
+        startProcessing(track);
+        writeHls(track);
+        sendTranscoded(track, jobIdOf(track));
+        awaitStatus(track, "READY");
     }
 
     public UUID jobIdOf(UUID trackId) {

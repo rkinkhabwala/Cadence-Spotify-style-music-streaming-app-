@@ -4,7 +4,7 @@ SHELL := /bin/bash
 JAVA_HOME := $(shell ./scripts/setup-toolchains.sh --print 2>/dev/null)
 export JAVA_HOME
 COMPOSE := docker compose
-INFRA := postgres redis kafka minio kafka-ui
+INFRA := postgres redis kafka minio elasticsearch kafka-ui
 
 .PHONY: help env keys toolchains up app app-down down logs ps seed test build run-api run-transcoder clean
 
@@ -20,7 +20,7 @@ keys: ## Generate the dev RS256 JWT key pair in secrets/ (never committed)
 toolchains: ## Register JDK 21 in ~/.m2/toolchains.xml (once per machine)
 	./scripts/setup-toolchains.sh
 
-up: env ## Start infrastructure (postgres, redis, kafka, minio, kafka-ui) and wait until healthy
+up: env ## Start infrastructure (postgres, redis, kafka, minio, elasticsearch, kafka-ui) and wait until healthy
 	$(COMPOSE) up -d --wait $(INFRA)
 	$(COMPOSE) up --no-log-prefix --exit-code-from minio-init minio-init
 
