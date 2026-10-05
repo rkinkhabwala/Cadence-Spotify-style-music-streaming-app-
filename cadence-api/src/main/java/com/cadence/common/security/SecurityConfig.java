@@ -41,7 +41,7 @@ class SecurityConfig {
         ProblemSecurityHandlers problems = new ProblemSecurityHandlers(objectMapper);
         http
                 .cors(cors -> cors.configurationSource(corsConfiguration(webOrigins)))
-                .csrf(AbstractHttpConfigurer::disable)          // bearer tokens only, no cookies (yet)
+                .csrf(AbstractHttpConfigurer::disable)          // bearer tokens; the refresh cookie has its own guard (D86)
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
                 .logout(AbstractHttpConfigurer::disable)
@@ -76,13 +76,15 @@ class SecurityConfig {
 
     /**
      * Spec 6: CORS restricted to the web client's origin(s). The dev server and the web container proxy the API
-     * (same origin), so this matters only when the client is served from elsewhere. Bearer tokens, no cookies.
+     * (same origin), so this matters only when the client is served from elsewhere. Credentials stay off, so the
+     * refresh cookie is never sent cross-origin.
      */
     static CorsConfigurationSource corsConfiguration(List<String> origins) {
         CorsConfiguration cors = new CorsConfiguration();
         cors.setAllowedOrigins(origins.stream().map(String::strip).filter(o -> !o.isEmpty()).toList());
         cors.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        cors.setAllowedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE, HttpHeaders.ACCEPT, HttpHeaders.IF_MATCH));
+        cors.setAllowedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE, HttpHeaders.ACCEPT, HttpHeaders.IF_MATCH,
+                "X-Cadence-CSRF"));
         cors.setExposedHeaders(List.of(HttpHeaders.ETAG, HttpHeaders.LOCATION, HttpHeaders.RETRY_AFTER));
         cors.setAllowCredentials(false);
         cors.setMaxAge(3600L);

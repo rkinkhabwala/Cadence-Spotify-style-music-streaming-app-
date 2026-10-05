@@ -39,8 +39,8 @@ class EndpointFailurePathsIT extends IntegrationTest {
 
     @Test
     void identityEndpoints() {
-        assertThat(api.post("/api/v1/auth/logout", Map.of("refreshToken", ""), null).getStatusCode())
-                .isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(api.post("/api/v1/auth/logout", null, null).getStatusCode())
+                .as("logout without the CSRF header").isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(api.post("/api/v1/auth/login", Map.of("email", "x"), null).getStatusCode())
                 .isEqualTo(HttpStatus.BAD_REQUEST);
         // only GET is public; any other method falls under "authenticated" before routing

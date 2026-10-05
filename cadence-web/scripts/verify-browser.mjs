@@ -1,6 +1,7 @@
 // Real-browser check of the web client against a running stack (spec 9 Phase 2 AC5, plus AC1 in the UI):
 // logs in, finds "The Beatlz" by typing "beatls", plays, then navigates through several pages and asserts the same
-// <audio> kept playing without being reloaded. Uses the locally installed Google Chrome through playwright-core
+// <audio> kept playing without being reloaded. Finally reloads the page: the session must come back from the
+// HttpOnly refresh cookie with no token in Web Storage (D86). Uses the locally installed Google Chrome through playwright-core
 // (no browser download). Screenshots go to cadence-web/target/screens/.
 import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
@@ -78,7 +79,21 @@ try {
   await page.screenshot({ path: `${SHOTS}album-playing.png` });
   await page.getByRole('button', { name: 'Queue' }).click();
   await page.screenshot({ path: `${SHOTS}queue.png` });
-  log(`PASS: playback continued across ${stops.length} navigations (${(previous.time - start.time).toFixed(1)} s heard meanwhile)`);
+  log(`playback continued across ${stops.length} navigations (${(previous.time - start.time).toFixed(1)} s heard meanwhile)`);
+
+  // D86: the refresh token is an HttpOnly cookie, never in Web Storage; a reload restores the session from it
+  const storage = await page.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }));
+  if (/eyJ|refresh|token/i.test(storage)) fail(`token material in Web Storage: ${storage}`);
+  if ((await page.evaluate(() => document.cookie)).includes('cadence_refresh')) fail('refresh cookie is readable by scripts');
+  const cookie = (await page.context().cookies()).find((c) => c.name === 'cadence_refresh');
+  if (!cookie?.httpOnly || cookie.sameSite !== 'Strict' || cookie.path !== '/api/v1/auth') {
+    fail(`unexpected refresh cookie: ${JSON.stringify({ ...cookie, value: undefined })}`);
+  }
+  await page.reload();
+  await page.locator('.hero-title').waitFor();
+  if (page.url().includes('/login')) fail('reload lost the session');
+  log('reload restored the session from the HttpOnly refresh cookie; Web Storage holds no tokens');
+  log('PASS');
 } catch (e) {
   await page.screenshot({ path: `${SHOTS}failure.png` }).catch(() => undefined);
   console.error('[verify-web] FAIL:', e.message);

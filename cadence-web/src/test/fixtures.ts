@@ -45,4 +45,4 @@ export const profile = {
   roles: ['LISTENER'],
 };
 
-export const tokens = { accessToken: 'access-1', refreshToken: 'refresh-2', expiresIn: 900 };
+export const tokens = { accessToken: 'access-1', expiresIn: 900 };

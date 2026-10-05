@@ -11,6 +11,9 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -52,7 +55,8 @@ class AuthIT extends IntegrationTest {
         JsonNode body = response.getBody();
         assertThat(body.get("tokenType").asText()).isEqualTo("Bearer");
         assertThat(body.get("expiresIn").asLong()).isEqualTo(900);
-        assertThat(body.get("refreshToken").asText()).hasSizeGreaterThan(40);
+        assertThat(body.has("refreshToken")).isFalse();
+        assertThat(ApiClient.refreshCookie(response)).hasSizeGreaterThan(40);
 
         JsonNode me = api.get("/api/v1/me", body.get("accessToken").asText()).getBody();
         assertThat(me.get("email").asText()).isEqualTo(email.toLowerCase());
@@ -120,29 +124,59 @@ class AuthIT extends IntegrationTest {
         assertThat(otherIp.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 
-    // ---------------------------------------------------------------- refresh
+    // ---------------------------------------------------------------- refresh (cookie, D86)
+
+    @Test
+    void refreshTokenIsAnHttpOnlyStrictCookieScopedToAuth() {
+        ResponseEntity<JsonNode> login = api.loginFrom(ApiClient.randomIp(), api.register().email(), ApiClient.PASSWORD);
+
+        String cookie = ApiClient.refreshSetCookie(login);
+        assertThat(cookie).contains("HttpOnly", "SameSite=Strict", "Path=/api/v1/auth", "Max-Age=2592000")
+                .as("plain-http localhost is not marked Secure").doesNotContain("Secure");
+    }
+
+    @Test
+    void refreshTokenNeverAppearsInAJsonResponseBody() {
+        String email = "body-" + UUID.randomUUID() + "@test.dev";
+        ResponseEntity<JsonNode> register = api.post("/api/v1/auth/register",
+                Map.of("email", email, "password", ApiClient.PASSWORD, "displayName", "Body"), null);
+        ResponseEntity<JsonNode> login = api.loginFrom(ApiClient.randomIp(), email, ApiClient.PASSWORD);
+        ResponseEntity<JsonNode> refresh = api.refresh(ApiClient.refreshCookie(login));
+
+        for (ResponseEntity<JsonNode> response : List.of(register, login, refresh)) {
+            String token = ApiClient.refreshCookie(response);
+            assertThat(token).isNotBlank();
+            assertThat(response.getBody().toString()).doesNotContain(token);
+            assertThat(response.getBody().fieldNames()).toIterable()
+                    .containsExactlyInAnyOrder("accessToken", "expiresIn", "tokenType");
+        }
+        // the OpenAPI document no longer advertises a refreshToken property anywhere
+        assertThat(api.get("/v3/api-docs", null).getBody().toString()).doesNotContain("\"refreshToken\"");
+    }
 
     @Test
     void fullLifecycleRegisterLoginRefreshLogout() {
         Session user = api.register();
         Session login = api.login(user.email(), ApiClient.PASSWORD);
 
-        JsonNode refreshed = refresh(login.refreshToken());
-        assertThat(refreshed.get("refreshToken").asText()).isNotEqualTo(login.refreshToken());
-        assertThat(api.get("/api/v1/me", refreshed.get("accessToken").asText()).getStatusCode()).isEqualTo(HttpStatus.OK);
+        ResponseEntity<JsonNode> refreshed = refresh(login.refreshToken());
+        String rotated = ApiClient.refreshCookie(refreshed);
+        assertThat(rotated).isNotEqualTo(login.refreshToken());
+        assertThat(api.get("/api/v1/me", refreshed.getBody().get("accessToken").asText()).getStatusCode())
+                .isEqualTo(HttpStatus.OK);
 
-        assertThat(api.post("/api/v1/auth/logout", Map.of("refreshToken", refreshed.get("refreshToken").asText()), null)
-                .getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
-        assertThat(api.post("/api/v1/auth/logout", Map.of("refreshToken", refreshed.get("refreshToken").asText()), null)
-                .getStatusCode()).as("logout is idempotent").isEqualTo(HttpStatus.NO_CONTENT);
+        ResponseEntity<JsonNode> logout = api.logout(rotated);
+        assertThat(logout.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        assertThat(ApiClient.refreshSetCookie(logout)).as("logout clears the cookie")
+                .startsWith("cadence_refresh=;").contains("Max-Age=0", "Path=/api/v1/auth");
+        assertThat(api.logout(rotated).getStatusCode()).as("logout is idempotent").isEqualTo(HttpStatus.NO_CONTENT);
+        assertThat(api.logout(null).getStatusCode()).as("logout without a cookie").isEqualTo(HttpStatus.NO_CONTENT);
 
-        ResponseEntity<JsonNode> afterLogout = api.post("/api/v1/auth/refresh",
-                Map.of("refreshToken", refreshed.get("refreshToken").asText()), null);
+        ResponseEntity<JsonNode> afterLogout = api.refresh(rotated);
         assertThat(afterLogout.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         assertThat(afterLogout.getBody().get("code").asText()).isEqualTo("invalid-refresh-token");
         // the session from register() is a different family and still works
-        assertThat(api.post("/api/v1/auth/refresh", Map.of("refreshToken", user.refreshToken()), null)
-                .getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(api.refresh(user.refreshToken()).getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 
     @Test
@@ -151,36 +185,100 @@ class AuthIT extends IntegrationTest {
         String expired = accessToken(user.userId(), Instant.now().minus(20, ChronoUnit.MINUTES), jwtEncoder, TokenUse.ACCESS);
 
         ResponseEntity<JsonNode> rejected = api.get("/api/v1/me", expired);
-        JsonNode pair = refresh(user.refreshToken());
+        ResponseEntity<JsonNode> pair = refresh(user.refreshToken());
 
         assertThat(rejected.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         assertThat(rejected.getBody().get("code").asText()).isEqualTo("invalid-token");
         assertThat(rejected.getHeaders().getFirst("WWW-Authenticate")).contains("invalid_token");
-        assertThat(api.get("/api/v1/me", pair.get("accessToken").asText()).getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(api.get("/api/v1/me", pair.getBody().get("accessToken").asText()).getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(ApiClient.refreshCookie(pair)).isNotEqualTo(user.refreshToken());
     }
 
     @Test
     void reusingARotatedRefreshTokenRevokesTheWholeFamily() {
         Session user = api.register();
-        JsonNode second = refresh(user.refreshToken());
+        String second = ApiClient.refreshCookie(refresh(user.refreshToken()));
 
-        ResponseEntity<JsonNode> reuse = api.post("/api/v1/auth/refresh", Map.of("refreshToken", user.refreshToken()), null);
-        ResponseEntity<JsonNode> successorAfterReuse = api.post("/api/v1/auth/refresh",
-                Map.of("refreshToken", second.get("refreshToken").asText()), null);
+        ResponseEntity<JsonNode> reuse = api.refresh(user.refreshToken());
+        ResponseEntity<JsonNode> successorAfterReuse = api.refresh(second);
 
         assertThat(reuse.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         assertThat(reuse.getBody().get("code").asText()).isEqualTo("refresh-token-reused");
+        assertThat(ApiClient.refreshSetCookie(reuse)).as("a rejected refresh clears the cookie").contains("Max-Age=0");
         assertThat(successorAfterReuse.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         assertThat(successorAfterReuse.getBody().get("code").asText()).isEqualTo("invalid-refresh-token");
     }
 
     @Test
-    void unknownRefreshTokenIsRejected() {
-        ResponseEntity<JsonNode> response = api.post("/api/v1/auth/refresh", Map.of("refreshToken", "nope"), null);
-        ResponseEntity<JsonNode> blank = api.post("/api/v1/auth/refresh", Map.of("refreshToken", ""), null);
+    void unknownOrMissingRefreshCookieIsRejected() {
+        ResponseEntity<JsonNode> unknown = api.refresh("nope");
+        ResponseEntity<JsonNode> missing = api.refresh(null);
+
+        assertThat(unknown.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(missing.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(missing.getBody().get("code").asText()).isEqualTo("invalid-refresh-token");
+        assertThat(ApiClient.refreshSetCookie(missing)).contains("Max-Age=0");
+    }
+
+    @Test
+    void aRefreshTokenInTheBodyIsIgnored() {
+        Session user = api.register();
+        HttpHeaders csrfOnly = ApiClient.cookieHeaders(null);
+
+        ResponseEntity<JsonNode> response = api.exchange(HttpMethod.POST, "/api/v1/auth/refresh",
+                Map.of("refreshToken", user.refreshToken()), null, csrfOnly);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-        assertThat(blank.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void cookieEndpointsRequireTheCsrfHeaderAndRejectCrossSiteRequests() {
+        Session user = api.register();
+        HttpHeaders noHeader = new HttpHeaders();
+        noHeader.add(HttpHeaders.COOKIE, "cadence_refresh=" + user.refreshToken());
+        HttpHeaders crossSite = ApiClient.cookieHeaders(user.refreshToken());
+        crossSite.set("Sec-Fetch-Site", "cross-site");
+        HttpHeaders evilOrigin = ApiClient.cookieHeaders(user.refreshToken());
+        evilOrigin.setOrigin("https://evil.example");
+
+        for (String path : List.of("/api/v1/auth/refresh", "/api/v1/auth/logout")) {
+            for (HttpHeaders headers : List.of(noHeader, crossSite)) {
+                ResponseEntity<JsonNode> response = api.exchange(HttpMethod.POST, path, null, null, headers);
+                assertThat(response.getStatusCode()).as("%s %s", path, headers).isEqualTo(HttpStatus.FORBIDDEN);
+                assertThat(response.getBody().get("code").asText()).isEqualTo("csrf-rejected");
+            }
+            // a foreign Origin is already refused by CORS (plain-text 403) before the guard runs
+            assertThat(api.http().exchange(path, HttpMethod.POST, new HttpEntity<>(evilOrigin), String.class)
+                    .getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        }
+
+        // the session survived every rejected attempt; the web client's own origin passes
+        HttpHeaders webOrigin = ApiClient.cookieHeaders(user.refreshToken());
+        webOrigin.setOrigin("http://localhost:5173");
+        webOrigin.set("Sec-Fetch-Site", "same-origin");
+        assertThat(api.exchange(HttpMethod.POST, "/api/v1/auth/refresh", null, null, webOrigin).getStatusCode())
+                .isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    void corsPreflightAllowsTheCsrfHeaderOnlyForTheWebOrigin() {
+        HttpHeaders preflight = new HttpHeaders();
+        preflight.setOrigin("http://localhost:5173");
+        preflight.setAccessControlRequestMethod(HttpMethod.POST);
+        preflight.setAccessControlRequestHeaders(List.of("x-cadence-csrf"));
+        HttpHeaders evil = new HttpHeaders();
+        evil.putAll(preflight);
+        evil.setOrigin("https://evil.example");
+
+        ResponseEntity<String> allowed = api.http().exchange("/api/v1/auth/refresh", HttpMethod.OPTIONS,
+                new HttpEntity<>(preflight), String.class);
+        ResponseEntity<String> refused = api.http().exchange("/api/v1/auth/refresh", HttpMethod.OPTIONS,
+                new HttpEntity<>(evil), String.class);
+
+        assertThat(allowed.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(allowed.getHeaders().getAccessControlAllowHeaders()).map(String::toLowerCase).contains("x-cadence-csrf");
+        assertThat(allowed.getHeaders().getAccessControlAllowCredentials()).isFalse();
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     }
 
     // ---------------------------------------------------------------- /me
@@ -270,10 +368,10 @@ class AuthIT extends IntegrationTest {
         assertThat(jwt.getExpiresAt()).isBetween(Instant.now().plusSeconds(800), Instant.now().plusSeconds(901));
     }
 
-    private JsonNode refresh(String refreshToken) {
-        ResponseEntity<JsonNode> response = api.post("/api/v1/auth/refresh", Map.of("refreshToken", refreshToken), null);
+    private ResponseEntity<JsonNode> refresh(String refreshToken) {
+        ResponseEntity<JsonNode> response = api.refresh(refreshToken);
         assertThat(response.getStatusCode()).as("refresh: %s", response.getBody()).isEqualTo(HttpStatus.OK);
-        return response.getBody();
+        return response;
     }
 
     static String accessToken(UUID userId, Instant issuedAt, JwtEncoder encoder, String tokenUse) {

@@ -1,4 +1,4 @@
-import { request } from './client';
+import { CSRF_HEADER, request } from './client';
 import type {
   AdminTrack, AlbumDetail, AlbumView, ArtistDetail, FollowedArtist, Home, LikedTrack, Page, PlaybackStart, PlaylistDetail,
   PlaylistView, PlaySource, PlayView, Profile, RecentlyPlayedItem, SavedAlbum, SearchResults, Suggestion, Tokens,
@@ -24,8 +24,7 @@ export const api = {
     request<Tokens>('/auth/login', { method: 'POST', body: { email, password }, auth: false }),
   register: (email: string, password: string, displayName: string) =>
     request<Tokens>('/auth/register', { method: 'POST', body: { email, password, displayName }, auth: false }),
-  logout: (refreshToken: string) =>
-    request<void>('/auth/logout', { method: 'POST', body: { refreshToken }, auth: false }),
+  logout: () => request<void>('/auth/logout', { method: 'POST', headers: { [CSRF_HEADER]: '1' }, auth: false }),
   me: () => request<Profile>('/me'),
 
   // catalog

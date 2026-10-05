@@ -33,7 +33,6 @@ describe('spec 9 Phase 2 AC5: the web player continues playback across page navi
 
   beforeEach(() => {
     clearTokens();
-    localStorage.setItem('cadence.refreshToken', 'refresh-1');
     engine = new FakeEngine(document.createElement('audio'));
     api = fakeApi({
       'POST /auth/refresh': tokens,
@@ -129,7 +128,9 @@ describe('spec 9 Phase 2 AC5: the web player continues playback across page navi
   });
 
   it('sends signed-out users to the login page', async () => {
-    localStorage.clear();
+    vi.stubGlobal('fetch', vi.fn(fakeApi({
+      'POST /auth/refresh': () => new Response(JSON.stringify({ status: 401, code: 'invalid-refresh-token' }), { status: 401 }),
+    }).fetchMock));
     renderApp('/album/al1');
     expect(await screen.findByRole('heading', { name: 'Log in to Cadence' })).toBeInTheDocument();
   });

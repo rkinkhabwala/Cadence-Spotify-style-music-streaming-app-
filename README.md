@@ -116,10 +116,13 @@ acceptance criterion end to end. None of this needs `make up`.
 ### Try the auth API
 
 ```bash
-curl -s -XPOST localhost:8080/api/v1/auth/register -H 'Content-Type: application/json' \
+curl -s -c jar -XPOST localhost:8080/api/v1/auth/register -H 'Content-Type: application/json' \
   -d '{"email":"me@example.com","password":"a-long-password","displayName":"Me"}'
-# → {"accessToken":"…","refreshToken":"…","expiresIn":900,"tokenType":"Bearer"}
+# → {"accessToken":"…","expiresIn":900,"tokenType":"Bearer"}
+#   plus Set-Cookie: cadence_refresh=…; Path=/api/v1/auth; HttpOnly; SameSite=Strict (never in the body)
 curl -s localhost:8080/api/v1/me -H "Authorization: Bearer <accessToken>"
+# rotate: the cookie is the credential, and the X-Cadence-CSRF header is required (DECISIONS.md D86)
+curl -s -b jar -c jar -XPOST localhost:8080/api/v1/auth/refresh -H 'X-Cadence-CSRF: 1'
 ```
 
 ## Layout

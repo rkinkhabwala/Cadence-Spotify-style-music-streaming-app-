@@ -130,9 +130,9 @@ export interface Profile {
   roles: string[];
 }
 
+/** The refresh token is never in a body: it is an HttpOnly cookie (D86). */
 export interface Tokens {
   accessToken: string;
-  refreshToken: string;
   expiresIn: number;
 }
 

@@ -1,6 +1,6 @@
 import { createContext, use, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { clearTokens, hasSession, onAuthChange, setTokens } from '../api/client';
+import { clearTokens, hasSession, onAuthChange, refreshSession, setTokens } from '../api/client';
 import { api } from '../api/endpoints';
 import type { Profile } from '../api/types';
 
@@ -25,7 +25,7 @@ export function useAuth(): AuthValue {
 
 export function AuthProvider({ children, onSignOut }: { children: ReactNode; onSignOut?: () => void }) {
   const queryClient = useQueryClient();
-  const [status, setStatus] = useState<Status>(hasSession() ? 'loading' : 'signed-out');
+  const [status, setStatus] = useState<Status>('loading');
   const [profile, setProfile] = useState<Profile | null>(null);
 
   const loadProfile = useCallback(async () => {
@@ -39,8 +39,13 @@ export function AuthProvider({ children, onSignOut }: { children: ReactNode; onS
     }
   }, []);
 
+  // restore the session from the HttpOnly refresh cookie (the access token doesn't survive a reload)
   useEffect(() => {
-    if (hasSession()) void loadProfile();
+    void (hasSession() ? Promise.resolve(true) : refreshSession()).then((restored) => {
+      if (restored) return loadProfile();
+      setProfile(null);
+      setStatus('signed-out');
+    });
   }, [loadProfile]);
 
   useEffect(() => onAuthChange((signedIn) => {
@@ -65,8 +70,7 @@ export function AuthProvider({ children, onSignOut }: { children: ReactNode; onS
       await loadProfile();
     },
     logout: async () => {
-      const refreshToken = localStorage.getItem('cadence.refreshToken');
-      if (refreshToken) await api.logout(refreshToken).catch(() => undefined);
+      await api.logout().catch(() => undefined);
       clearTokens();
     },
   }), [status, profile, loadProfile]);

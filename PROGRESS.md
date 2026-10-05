@@ -363,3 +363,38 @@ Verification builds ran on an identical copy of the tree outside iCloud.
 - `verify-player.sh`: `/dev/player.html` still plays and seeks (PASS).
 
 **Assumptions:** D76–D85.
+
+## Pre-Phase 3 — Refresh token in an HttpOnly cookie (security fix)
+
+**Plan**
+- API: register/login/refresh set the refresh token only as the `cadence_refresh` cookie (HttpOnly, SameSite=Strict,
+  `Path=/api/v1/auth`, Secure except on loopback hosts); `/auth/refresh` and `/auth/logout` read the cookie; response
+  bodies drop `refreshToken`. Rotation and reuse detection (D20) unchanged.
+- CSRF for the cookie endpoints: required `X-Cadence-CSRF` header (forces a CORS preflight), `Sec-Fetch-Site` and
+  `Origin` checks; CORS allows the header, credentials stay off.
+- Web client: access token in memory only, nothing in Web Storage, `/auth/refresh` on page load restores the session.
+- Tests: cookie attributes, the refresh token never in a JSON body (or in the OpenAPI document), lifecycle, reuse,
+  missing cookie, CSRF rejections, preflight; unit tests for the cookie and the guard; client tests; e2e AC1.
+
+**Built**
+- `identity.api`: `RefreshCookies`, `RefreshCsrfGuard`, cookie-based `AuthController`; `TokenResponse` without
+  `refreshToken`. `ForbiddenException(code, detail)`. CORS allows `X-Cadence-CSRF`.
+- `cadence-web`: `api/client.ts` (in-memory access token, cookie refresh with the CSRF header, single-flight + Web
+  Locks), `AuthProvider` restores the session on load, logout via the cookie.
+- `verify-browser.mjs` now also checks the cookie attributes, that scripts can't read it, that Web Storage holds no
+  token, and that a reload restores the session.
+- D86 supersedes D80. README auth example updated.
+
+**Tests: 225 passing, 0 skipped** (+10).
+- Unit: `RefreshCookiesTest` (2), `RefreshCsrfGuardTest` (2).
+- Integration: `AuthIT` 14 → 19: cookie attributes, refresh token never in a JSON body or the OpenAPI document,
+  lifecycle with cookie clearing, reuse clears the cookie, missing/unknown cookie, body token ignored, CSRF
+  rejections (no header, cross-site, foreign Origin), preflight. `EndpointFailurePathsIT`: logout without the header → 403.
+- Web: `client.test` 3 → 4 (reload restore, no Web Storage, stop retrying after a rejected refresh).
+- e2e `Phase1AcceptanceIT` AC1 refreshes through the cookie.
+
+**Verified manually** against the rebuilt containers: through the nginx proxy on :3000, login sets the cookie,
+refresh with only the cookie returns `{accessToken, expiresIn, tokenType}`, refresh without the header → 403, logout →
+204, refresh afterwards → 401. `make web-verify` (headless Chrome, :3000): PASS, including the reload check.
+
+**Assumptions:** D86.

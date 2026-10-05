@@ -22,18 +22,15 @@ final class AuthDtos {
     record LoginRequest(@NotBlank @Email String email, @NotBlank @Size(max = 200) String password) {
     }
 
-    record RefreshTokenRequest(@NotBlank @Size(max = 200) String refreshToken) {
-    }
-
     record UpdateProfileRequest(
             @Size(min = 1, max = 100) @Pattern(regexp = ".*\\S.*", message = "must not be blank") String displayName,
             @Size(max = 2048) @URL(regexp = "^(https?://.*)?$", message = "must be an http(s) URL") String avatarUrl,
             @Pattern(regexp = "[A-Z]{2}", message = "must be an ISO 3166-1 alpha-2 code") String country) {
     }
 
+    /** The refresh token is deliberately absent: it is only ever sent as an HttpOnly cookie (D86). */
     record TokenResponse(
             String accessToken,
-            String refreshToken,
             @Schema(description = "Access token lifetime in seconds") long expiresIn,
             String tokenType) {
     }

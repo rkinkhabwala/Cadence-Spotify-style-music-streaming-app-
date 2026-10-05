@@ -76,11 +76,13 @@ class Phase1AcceptanceIT {
 
         String expired = expiredAccessToken(listenerId);
         assertThat(http.get("/api/v1/me", expired).status()).isEqualTo(401);
-        Http.Response refreshed = http.post("/api/v1/auth/refresh",
-                Map.of("refreshToken", login.body().get("refreshToken").asText()), null);
+        String refreshCookie = refreshCookie(login);
+        assertThat(login.body().has("refreshToken")).as("refresh token only travels in the HttpOnly cookie").isFalse();
+        Http.Response refreshed = http.send("POST", "/api/v1/auth/refresh", null, null,
+                "Cookie", "cadence_refresh=" + refreshCookie, "X-Cadence-CSRF", "1");
 
         assertThat(refreshed.status()).isEqualTo(200);
-        assertThat(refreshed.body().get("refreshToken").asText()).isNotEqualTo(login.body().get("refreshToken").asText());
+        assertThat(refreshCookie(refreshed)).isNotBlank().isNotEqualTo(refreshCookie);
         listenerToken = refreshed.body().get("accessToken").asText();
         assertThat(http.get("/api/v1/me", listenerToken).body().get("email").asText()).isEqualTo(email);
     }
@@ -251,5 +253,12 @@ class Phase1AcceptanceIT {
     private static UUID id(Http.Response response) {
         assertThat(response.status()).as("%s", response.body()).isIn(200, 201);
         return UUID.fromString(response.body().get("id").asText());
+    }
+
+    private static String refreshCookie(Http.Response response) {
+        return response.raw().headers().allValues("Set-Cookie").stream()
+                .filter(c -> c.startsWith("cadence_refresh="))
+                .map(c -> c.substring("cadence_refresh=".length(), c.indexOf(';')))
+                .findFirst().orElseThrow();
     }
 }

@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
@@ -21,6 +22,7 @@ public class ApiClient {
     public static final String ADMIN_EMAIL = "admin@cadence.test";
     public static final String ADMIN_PASSWORD = "admin-password-123";
     public static final String PASSWORD = "correct-horse-battery";
+    public static final String REFRESH_COOKIE = "cadence_refresh";
 
     public record Session(UUID userId, String email, String accessToken, String refreshToken) {
     }
@@ -76,7 +78,7 @@ public class ApiClient {
         ResponseEntity<JsonNode> response = post("/api/v1/auth/register",
                 Map.of("email", email, "password", PASSWORD, "displayName", "Test User"), null);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-        return session(email, response.getBody());
+        return session(email, response);
     }
 
     public Session admin() {
@@ -87,7 +89,7 @@ public class ApiClient {
     public Session login(String email, String password) {
         ResponseEntity<JsonNode> response = loginFrom(randomIp(), email, password);
         assertThat(response.getStatusCode()).as("login %s: %s", email, response.getBody()).isEqualTo(HttpStatus.OK);
-        return session(email, response.getBody());
+        return session(email, response);
     }
 
     public ResponseEntity<JsonNode> loginFrom(String clientIp, String email, String password) {
@@ -97,14 +99,48 @@ public class ApiClient {
                 null, headers);
     }
 
+    /** Calls {@code POST /auth/refresh} the way the web client does: refresh cookie plus the CSRF header. */
+    public ResponseEntity<JsonNode> refresh(String refreshToken) {
+        return exchange(HttpMethod.POST, "/api/v1/auth/refresh", null, null, cookieHeaders(refreshToken));
+    }
+
+    public ResponseEntity<JsonNode> logout(String refreshToken) {
+        return exchange(HttpMethod.POST, "/api/v1/auth/logout", null, null, cookieHeaders(refreshToken));
+    }
+
+    public static HttpHeaders cookieHeaders(String refreshToken) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-Cadence-CSRF", "1");
+        if (refreshToken != null) {
+            headers.add(HttpHeaders.COOKIE, REFRESH_COOKIE + "=" + refreshToken);
+        }
+        return headers;
+    }
+
+    /** The full {@code Set-Cookie} header for the refresh cookie, or null. */
+    public static String refreshSetCookie(ResponseEntity<?> response) {
+        List<String> cookies = response.getHeaders().getOrEmpty(HttpHeaders.SET_COOKIE);
+        return cookies.stream().filter(c -> c.startsWith(REFRESH_COOKIE + "=")).findFirst().orElse(null);
+    }
+
+    /** The refresh token value from the response's {@code Set-Cookie}, or null. */
+    public static String refreshCookie(ResponseEntity<?> response) {
+        String cookie = refreshSetCookie(response);
+        if (cookie == null) {
+            return null;
+        }
+        String value = cookie.substring(REFRESH_COOKIE.length() + 1, cookie.indexOf(';'));
+        return value.isEmpty() ? null : value;
+    }
+
     public static String randomIp() {
         ThreadLocalRandom r = ThreadLocalRandom.current();
         return "10." + r.nextInt(256) + "." + r.nextInt(256) + "." + r.nextInt(1, 255);
     }
 
-    private Session session(String email, JsonNode tokens) {
-        String access = tokens.get("accessToken").asText();
+    private Session session(String email, ResponseEntity<JsonNode> response) {
+        String access = response.getBody().get("accessToken").asText();
         UUID userId = UUID.fromString(get("/api/v1/me", access).getBody().get("id").asText());
-        return new Session(userId, email, access, tokens.get("refreshToken").asText());
+        return new Session(userId, email, access, refreshCookie(response));
     }
 }

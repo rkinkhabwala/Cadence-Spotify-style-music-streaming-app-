@@ -3,13 +3,16 @@ import type { Problem, Tokens } from './types';
 /**
  * Fetch wrapper for /api/v1 with bearer auth.
  *
- * Tokens: the access token lives in memory only; the refresh token is kept in localStorage so a reload keeps the
- * session. The API rotates refresh tokens and treats a reused one as theft (the whole session is revoked), so refreshes
- * are single-flight within a tab and serialized across tabs with the Web Locks API: inside the lock we re-read the
- * stored token, and if another tab already rotated it we just use the new one.
+ * Tokens (D86): the access token lives in memory only. The refresh token is an HttpOnly, SameSite=Strict cookie scoped
+ * to /api/v1/auth, so scripts never see it and the browser only sends it to the refresh and logout calls. On page load
+ * the app calls /auth/refresh to restore the session from that cookie. The API rotates refresh tokens and treats a
+ * reused one as theft (the whole session is revoked), so refreshes are single-flight within a tab and serialized across
+ * tabs with the Web Locks API. The cookie jar is shared, so a tab that waited for the lock sends the token the previous
+ * tab just received.
  */
 
-const REFRESH_KEY = 'cadence.refreshToken';
+/** Required by the cookie endpoints (refresh, logout) as CSRF protection; see RefreshCsrfGuard. */
+export const CSRF_HEADER = 'X-Cadence-CSRF';
 export const API = '/api/v1';
 
 export class ApiError extends Error {
@@ -28,6 +31,8 @@ export class ApiError extends Error {
 }
 
 let accessToken: string | null = null;
+/** The last refresh was rejected: requests stop trying to refresh until the next sign-in. */
+let sessionEnded = false;
 let refreshing: Promise<boolean> | null = null;
 const listeners = new Set<(signedIn: boolean) => void>();
 
@@ -36,38 +41,21 @@ export function onAuthChange(listener: (signedIn: boolean) => void): () => void 
   return () => listeners.delete(listener);
 }
 
-function storedRefreshToken(): string | null {
-  try {
-    return localStorage.getItem(REFRESH_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function storeRefreshToken(token: string | null) {
-  try {
-    if (token) localStorage.setItem(REFRESH_KEY, token);
-    else localStorage.removeItem(REFRESH_KEY);
-  } catch {
-    // storage unavailable: the session just won't survive a reload
-  }
-}
-
 export function setTokens(tokens: Tokens) {
   accessToken = tokens.accessToken;
-  storeRefreshToken(tokens.refreshToken);
+  sessionEnded = false;
   listeners.forEach((l) => l(true));
 }
 
 export function clearTokens() {
-  const wasSignedIn = accessToken !== null || storedRefreshToken() !== null;
+  const wasSignedIn = accessToken !== null;
   accessToken = null;
-  storeRefreshToken(null);
+  sessionEnded = true;
   if (wasSignedIn) listeners.forEach((l) => l(false));
 }
 
 export function hasSession(): boolean {
-  return accessToken !== null || storedRefreshToken() !== null;
+  return accessToken !== null;
 }
 
 export function currentAccessToken(): string | null {
@@ -79,21 +67,20 @@ async function withRefreshLock<T>(work: () => Promise<T>): Promise<T> {
   return locks ? locks.request('cadence-token-refresh', work) : work();
 }
 
-/** Gets a new access token with the stored refresh token. @returns false when the session is gone */
+/**
+ * Gets a new access token using the refresh cookie (also how a reload restores the session).
+ * @returns false when there is no session
+ */
 export function refreshSession(): Promise<boolean> {
   if (!refreshing) {
-    const before = storedRefreshToken();
     refreshing = withRefreshLock(async () => {
-      const current = storedRefreshToken();
-      if (!current) return false;
-      if (current !== before && accessToken) return true; // another tab rotated it
       const response = await fetch(`${API}/auth/refresh`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken: current }),
+        headers: { Accept: 'application/json', [CSRF_HEADER]: '1' },
+        credentials: 'same-origin',
       });
       if (!response.ok) {
-        if (response.status === 401 || response.status === 400) clearTokens();
+        if (response.status === 401) clearTokens();
         return false;
       }
       setTokens((await response.json()) as Tokens);
@@ -134,13 +121,14 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       method,
       headers: finalHeaders,
       body: body === undefined ? undefined : JSON.stringify(body),
+      credentials: 'same-origin',
       signal,
     });
   };
 
-  if (auth && !accessToken && storedRefreshToken()) await refreshSession();
+  if (auth && !accessToken && !sessionEnded) await refreshSession();
   let response = await send();
-  if (response.status === 401 && auth && storedRefreshToken()) {
+  if (response.status === 401 && auth && !sessionEnded) {
     if (await refreshSession()) response = await send();
   }
   if (!response.ok) throw await toError(response);
