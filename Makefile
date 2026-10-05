@@ -1,17 +1,21 @@
 # Cadence developer commands. Builds need JDK 21 (DECISIONS.md D2).
 SHELL := /bin/bash
-JAVA_HOME ?= $(shell /usr/libexec/java_home -v 21 2>/dev/null || { [ -d /opt/homebrew/opt/openjdk@21 ] && echo /opt/homebrew/opt/openjdk@21; })
+# Maven selects JDK 21 through toolchains (`make toolchains`); JAVA_HOME is set too for the Spring Boot plugin
+JAVA_HOME := $(shell ./scripts/setup-toolchains.sh --print 2>/dev/null)
 export JAVA_HOME
 COMPOSE := docker compose
 INFRA := postgres redis kafka minio kafka-ui
 
-.PHONY: help env up down logs ps seed test build run-api run-transcoder clean
+.PHONY: help env toolchains up down logs ps seed test build run-api run-transcoder clean
 
 help: ## Show targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-16s %s\n", $$1, $$2}'
 
 env: ## Create .env from .env.example if missing
 	@[ -f .env ] || { cp .env.example .env && echo "Created .env from .env.example"; }
+
+toolchains: ## Register JDK 21 in ~/.m2/toolchains.xml (once per machine)
+	./scripts/setup-toolchains.sh
 
 up: env ## Start infrastructure (postgres, redis, kafka, minio, kafka-ui) and wait until healthy
 	$(COMPOSE) up -d --wait $(INFRA)

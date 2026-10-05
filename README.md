@@ -19,9 +19,9 @@ assumptions, and [`PROGRESS.md`](PROGRESS.md) for what has been built.
 
 ## Prerequisites
 
-- **JDK 21.** The build refuses other versions. The `Makefile` finds JDK 21 automatically
-  (`/usr/libexec/java_home -v 21`, or Homebrew `openjdk@21`). When calling `./mvnw` directly, run
-  `export JAVA_HOME=$(/usr/libexec/java_home -v 21)` first, or on Homebrew `export JAVA_HOME=/opt/homebrew/opt/openjdk@21`.
+- **JDK 21** installed (e.g. `brew install openjdk@21`). Run `make toolchains` once per machine: it registers
+  JDK 21 in `~/.m2/toolchains.xml`, and from then on `./mvnw` compiles and tests on JDK 21 whatever your shell's
+  `java` is. With [direnv](https://direnv.net), `direnv allow` also puts JDK 21 on your `PATH` via `.envrc`.
 - **Docker** (Docker Desktop or compatible), for Compose and Testcontainers.
 
 ## Run it
