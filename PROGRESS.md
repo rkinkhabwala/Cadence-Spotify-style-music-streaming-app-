@@ -65,3 +65,38 @@ Append-only log of completed slices.
 - `token_use` claim (D21).
 - The rate limiter fails open (D23).
 - No HTTP endpoint changes a user's plan (D26).
+
+## Slice 1.3 — Catalog and uploads
+
+**Plan**
+- Migration `V3__catalog.sql`: `artists`, `albums`, `genres`, `album_genres`, `tracks` (status, source key, transcode job id, loudness, failure reason), `track_artists`.
+- `common.storage`: S3 (AWS SDK v2, path-style) `ObjectStorage` for presigned PUT/GET, HEAD, range reads and prefix deletes. A separate public endpoint is used for presigning, and buckets can be auto-created in dev/test.
+- `catalog` domain:
+  - `Artist`, `Album`, `Genre`, `Track` (DRAFT → PROCESSING → READY/FAILED state machine with a job id), `TrackArtist` credits
+  - `AudioFormat` (extension, MIME type, magic-byte sniffing)
+- Public reads: `GET /artists/{id}` (+ top 10 READY tracks), `/artists/{id}/albums` (cursor), `/albums/{id}`, `/tracks/{id}`, `/genres`.
+- Admin: POST/PATCH/DELETE for artists, albums and tracks; `upload-url` (presigned PUT to `raw/{trackId}/source.{ext}`, size-signed, ≤ 200 MB); `upload-complete` (HEAD + magic bytes → PROCESSING + `catalog.track-uploaded` via the outbox); `retranscode`; `GET /admin/tracks?status=`.
+- `catalog.entity-changed` is written to the outbox on every create/update/delete, with a snapshot of the entity (for search in Phase 2).
+- Public `CatalogQueries` API (`TrackSummary` hydration) for library and streaming.
+- Tests: Track state-machine and AudioFormat unit tests. ITs with Testcontainers Postgres, Kafka and MinIO: admin CRUD and validation, 403/404/409, public reads, a real presigned upload, upload-complete events on Kafka, idempotency, retranscode.
+
+**Built**
+- `common.storage`: `S3Properties`, `S3Config` (path-style client plus a presigner on the public endpoint), `ObjectStorage` (presigned PUT signed for type and length, presigned GET, HEAD, range read, put, delete, prefix delete, list; optional bucket auto-create).
+- `cadence-events`: `TrackUploadedPayload`, `TrackTranscodedPayload`, `TrackTranscodeFailedPayload`, `EntityChangedPayload`, unlike/unfollow event types, and an `EventEnvelope.create` overload with a caller-chosen id.
+- `catalog`:
+  - Public API: `CatalogQueries`, `TrackSummary`, `CatalogRefs`, `TrackStatus`
+  - Domain: `Artist`, `Album`, `Genre`, `Track` (state machine and job id), `TrackArtist`, `AudioFormat`
+  - Repositories with keyset queries; `CatalogReadService`, `ArtistAdminService`, `AlbumAdminService`, `TrackAdminService`, `TrackUploadService`, `CatalogEvents`, `TrackSummaries` (no N+1), MapStruct `CatalogMapper`
+  - `CatalogController` (public) and `AdminCatalogController`
+- Migration `V3`. Public catalog GET rules in `SecurityConfig`. `minio-init` creates the least-privilege `cadence-app` user.
+- Rate limiter switched to interval refill (D23). Tests pin the JDK HTTP client (D37).
+- Verified manually against Compose with the least-privilege credentials: create, presigned PUT, upload-complete, event on Kafka, delete with storage cleanup.
+
+**Tests: 86 passing, 0 skipped** (+29).
+- New unit tests: `TrackTest` (7), `AudioFormatTest` (3).
+- New integration tests:
+  - `AdminCatalogIT` (8): CRUD, outbox events, defaults/genres, validation, delete conflicts, PATCH, 403/401, dashboard filter and pagination
+  - `CatalogPublicIT` (5): top 10 by play count with READY only, album pagination, tracklist order, track 404 unless READY, genres
+  - `UploadIT` (6): real presigned upload, event on Kafka, idempotent complete, URL validation, storage rejecting a wrong size, missing upload, non-audio rejected and deleted, retranscode rules
+
+**Assumptions:** D28–D37.

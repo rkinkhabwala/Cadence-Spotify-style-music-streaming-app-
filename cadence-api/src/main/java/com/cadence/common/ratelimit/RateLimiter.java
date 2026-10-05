@@ -38,7 +38,7 @@ public class RateLimiter {
         ConsumptionProbe probe;
         try {
             BucketConfiguration configuration = BucketConfiguration.builder()
-                    .addLimit(l -> l.capacity(limit.capacity()).refillGreedy(limit.capacity(), limit.period()))
+                    .addLimit(l -> l.capacity(limit.capacity()).refillIntervally(limit.capacity(), limit.period()))
                     .build();
             probe = buckets.builder()
                     .build("rate-limit:" + limitName + ":" + subject, () -> configuration)

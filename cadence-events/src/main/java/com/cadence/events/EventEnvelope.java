@@ -44,7 +44,13 @@ public record EventEnvelope(
     /** Creates a new envelope with a fresh UUIDv7 id, converting {@code payload} with {@code mapper}. */
     public static EventEnvelope create(String eventType, Instant occurredAt, UUID userId,
                                        String itemType, UUID itemId, Object payload, ObjectMapper mapper) {
-        return new EventEnvelope(UuidV7.generate(), eventType, occurredAt, userId, itemType, itemId,
+        return create(UuidV7.generate(), eventType, occurredAt, userId, itemType, itemId, payload, mapper);
+    }
+
+    /** Same as above with a caller-chosen event id (e.g. when the id doubles as a job id). */
+    public static EventEnvelope create(UUID eventId, String eventType, Instant occurredAt, UUID userId,
+                                       String itemType, UUID itemId, Object payload, ObjectMapper mapper) {
+        return new EventEnvelope(eventId, eventType, occurredAt, userId, itemType, itemId,
                 payload == null ? null : toTree(payload, mapper));
     }
 

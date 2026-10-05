@@ -94,6 +94,8 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       RAW_BUCKET: ${CADENCE_S3_RAW_BUCKET:-cadence-raw}
       HLS_BUCKET: ${CADENCE_S3_HLS_BUCKET:-cadence-hls}
+      APP_ACCESS_KEY: ${CADENCE_S3_ACCESS_KEY:?set CADENCE_S3_ACCESS_KEY in .env}
+      APP_SECRET_KEY: ${CADENCE_S3_SECRET_KEY:?set CADENCE_S3_SECRET_KEY in .env}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -102,7 +104,18 @@ services:
         mc mb --ignore-existing "local/$$RAW_BUCKET" "local/$$HLS_BUCKET"
         mc anonymous set private "local/$$RAW_BUCKET"
         mc anonymous set private "local/$$HLS_BUCKET"
-        echo "buckets ready"
+        # least-privilege credentials for the apps: object read/write on the two buckets only
+        cat > /tmp/cadence-app.json <<POLICY
+        {"Version":"2012-10-17","Statement":[
+          {"Effect":"Allow","Action":["s3:GetBucketLocation","s3:ListBucket"],
+           "Resource":["arn:aws:s3:::$$RAW_BUCKET","arn:aws:s3:::$$HLS_BUCKET"]},
+          {"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject"],
+           "Resource":["arn:aws:s3:::$$RAW_BUCKET/*","arn:aws:s3:::$$HLS_BUCKET/*"]}]}
+        POLICY
+        mc admin policy create local cadence-app /tmp/cadence-app.json
+        mc admin user add local "$$APP_ACCESS_KEY" "$$APP_SECRET_KEY"
+        mc admin policy attach local cadence-app --user "$$APP_ACCESS_KEY" 2>/dev/null || true
+        echo "buckets and app user ready"
     restart: "no"
     networks: [cadence-net]
 

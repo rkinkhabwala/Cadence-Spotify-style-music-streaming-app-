@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
@@ -33,8 +34,13 @@ public abstract class IntegrationTest {
         registry.add("cadence.security.jwt.public-key-location", () -> "file:" + TestKeys.publicKeyFile());
     }
 
+    /**
+     * Pins the JDK HttpClient: Apache HttpClient 5 (on the classpath via the AWS SDK) would otherwise be picked and
+     * its default retry strategy silently waits out {@code Retry-After} and retries 429/503, hiding them from tests.
+     */
     @BeforeEach
     void apiClient() {
+        http.getRestTemplate().setRequestFactory(new JdkClientHttpRequestFactory());
         api = new ApiClient(http);
     }
 }

@@ -84,6 +84,19 @@ cadence:
     login:
       capacity: 5
       period: 1m
+  s3:
+    # endpoint the API talks to; public-endpoint is what browsers/players see in presigned URLs
+    endpoint: ${CADENCE_S3_ENDPOINT:http://localhost:9000}
+    public-endpoint: ${CADENCE_S3_PUBLIC_ENDPOINT:http://localhost:9000}
+    region: ${CADENCE_S3_REGION:us-east-1}
+    access-key: ${CADENCE_S3_ACCESS_KEY:}
+    secret-key: ${CADENCE_S3_SECRET_KEY:}
+    raw-bucket: ${CADENCE_S3_RAW_BUCKET:cadence-raw}
+    hls-bucket: ${CADENCE_S3_HLS_BUCKET:cadence-hls}
+    auto-create-buckets: ${CADENCE_S3_AUTO_CREATE_BUCKETS:false}
+  catalog:
+    max-upload-bytes: 209715200   # 200 MB (spec 6)
+    upload-url-ttl: 15m
   outbox:
     poll-interval: ${CADENCE_OUTBOX_POLL_INTERVAL:500ms}
     batch-size: 100

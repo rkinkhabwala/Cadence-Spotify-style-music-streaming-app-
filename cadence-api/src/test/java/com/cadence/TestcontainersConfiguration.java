@@ -3,7 +3,9 @@ package com.cadence;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
+import org.springframework.test.context.DynamicPropertyRegistrar;
 import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
@@ -22,6 +24,26 @@ public class TestcontainersConfiguration {
     @ServiceConnection
     KafkaContainer kafka() {
         return new KafkaContainer(DockerImageName.parse("apache/kafka:3.9.1"));
+    }
+
+    /** Same MinIO build as docker-compose.yml (DECISIONS.md D3); only the plain S3 API is used. */
+    @Bean
+    MinIOContainer minio() {
+        return new MinIOContainer(DockerImageName.parse("pgsty/minio:RELEASE.2026-08-04T00-00-00Z")
+                .asCompatibleSubstituteFor("minio/minio"))
+                .withUserName("cadence-test")
+                .withPassword("cadence-test-secret");
+    }
+
+    @Bean
+    DynamicPropertyRegistrar s3Properties(MinIOContainer minio) {
+        return registry -> {
+            registry.add("cadence.s3.endpoint", minio::getS3URL);
+            registry.add("cadence.s3.public-endpoint", minio::getS3URL);
+            registry.add("cadence.s3.access-key", minio::getUserName);
+            registry.add("cadence.s3.secret-key", minio::getPassword);
+            registry.add("cadence.s3.auto-create-buckets", () -> "true");
+        };
     }
 
     @Bean

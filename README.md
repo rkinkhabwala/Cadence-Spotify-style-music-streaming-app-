@@ -7,7 +7,7 @@ assumptions, and [`PROGRESS.md`](PROGRESS.md) for what has been built.
 
 ## Status
 
-**Phase 1: slices 1.1 (skeleton) and 1.2 (identity) are done.** What works now:
+**Phase 1: slices 1.1–1.3 (skeleton, identity, catalog and uploads) are done.** What works now:
 
 - Multi-module Maven build (`./mvnw`), JDK 21, virtual threads.
 - `cadence-api` boots. It has Flyway (outbox + processed-event tables), `/actuator/health`, Swagger UI,
@@ -18,7 +18,12 @@ assumptions, and [`PROGRESS.md`](PROGRESS.md) for what has been built.
 - **Identity:** register, login (rate-limited to 5 per minute per IP), refresh-token rotation with reuse
   detection, logout, `GET/PATCH /api/v1/me`, RS256 JWTs (15 min) with public keys at `/.well-known/jwks.json`.
   The admin is created at startup from `CADENCE_ADMIN_EMAIL`/`CADENCE_ADMIN_PASSWORD`, and every `/api/v1/admin/**` route requires ADMIN.
-- Not built yet: catalog, uploads, playback, library and seed data (slices 1.3–1.6).
+- **Catalog:** public reads (`/artists/{id}` with top tracks, `/artists/{id}/albums`, `/albums/{id}`, `/tracks/{id}`,
+  `/genres`) showing READY tracks only. Admin CRUD for artists, albums and tracks, and the upload flow: `upload-url`
+  (presigned PUT straight to MinIO, ≤ 200 MB) → `upload-complete` (size and magic-byte check, then PROCESSING and a
+  `catalog.track-uploaded` event via the outbox) → `retranscode`, plus the `GET /admin/tracks?status=` dashboard.
+  Every catalog change emits `catalog.entity-changed`.
+- Not built yet: transcoding (tracks stay PROCESSING), playback, library and seed data (slices 1.4–1.6).
 
 ## Prerequisites
 
@@ -45,7 +50,7 @@ make down              # stop infra (data kept in volumes; `docker compose down 
 | PostgreSQL 16 | localhost:5432 | db/user from `.env` |
 | Redis 7 | localhost:6379 | password from `.env` |
 | Kafka (KRaft) | localhost:9092 (host), `kafka:29092` (on `cadence-net`) | |
-| MinIO | http://localhost:9000 (S3), http://localhost:9001 (console) | private buckets `cadence-raw`, `cadence-hls` |
+| MinIO | http://localhost:9000 (S3), http://localhost:9001 (console) | private buckets `cadence-raw`, `cadence-hls`; apps use the least-privilege `cadence-app` user |
 | kafka-ui | http://localhost:8090 | |
 
 All config comes from environment variables, documented in [`.env.example`](.env.example). Both Compose and
@@ -57,7 +62,7 @@ the Spring apps read `.env`, which is git-ignored.
 make test              # = ./mvnw verify : unit tests (*Test) + Testcontainers integration tests (*IT)
 ```
 
-Integration tests start their own Postgres, Kafka and Redis containers, so they don't need `make up`.
+Integration tests start their own Postgres, Kafka, Redis and MinIO containers, so they don't need `make up`.
 
 ### Try the auth API
 
