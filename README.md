@@ -9,7 +9,7 @@ contract with the external recommender.
 
 ## Status
 
-**Phase 1 (core backend and playback) is complete** (slices 1.1–1.6). **Phase 2 (search, activity, web client) is complete**: slices 2.1–2.3. **Phase 3** is in progress: slice 3.1 (recommender integration) is done. What works now:
+**Phase 1 (core backend and playback) is complete** (slices 1.1–1.6). **Phase 2 (search, activity, web client) is complete**: slices 2.1–2.3. **Phase 3** is in progress: slices 3.1 (recommender integration) and 3.2 (free vs Premium, collaborative playlists) are done. What works now:
 
 - Multi-module Maven build (`./mvnw`), JDK 21, virtual threads.
 - `cadence-api` boots. It has Flyway (outbox + processed-event tables), `/actuator/health`, Swagger UI,
@@ -34,6 +34,10 @@ contract with the external recommender.
 - **Library:** playlists (create, rename with `If-Match`, delete; add at a position, remove, reorder with fractional
   ordering; up to 10,000 tracks; private by default), plus idempotent likes, follows and saved albums. Likes and
   follows emit `library.*` events for the recommender.
+- **Free vs Premium:** free users get 96/160 kbps only, 6 skips per rolling hour (`POST /api/v1/playback/{id}/skip`;
+  the 7th is 429 with `Retry-After`), and an ad-break placeholder before every 3rd track. Premium has none of these limits.
+- **Collaborative playlists:** the owner turns on "Collaborative" and shares an invite link. Anyone who opens it can
+  add, remove and reorder songs. Concurrent edits are retried on the server, so no write is lost.
 - **Search:** Elasticsearch indices of artists, albums, READY tracks and public playlists, kept current from
   `catalog.entity-changed` / `library.playlist-changed` events (edits are searchable within about a second).
   `GET /api/v1/search?q=&types=&limit=&cursor=` is fuzzy and prefix-aware and grouped by type;

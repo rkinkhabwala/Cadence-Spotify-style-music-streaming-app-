@@ -101,7 +101,10 @@ export interface RequestOptions {
 }
 
 async function toError(response: Response): Promise<ApiError> {
-  let problem: Problem = { status: response.status, title: response.statusText };
+  const retryAfter = Number(response.headers.get('Retry-After'));
+  let problem: Problem = {
+    status: response.status, title: response.statusText, ...(retryAfter > 0 ? { retryAfter } : {}),
+  };
   try {
     const text = await response.text();
     if (text) problem = { ...problem, ...(JSON.parse(text) as Problem) };

@@ -1,6 +1,6 @@
-import { useState, type DragEvent as ReactDragEvent, type FormEvent } from 'react';
+import { useEffect, useState, type DragEvent as ReactDragEvent, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useParams } from 'react-router';
+import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { ApiError } from '../api/client';
 import { api } from '../api/endpoints';
 import { keys } from '../api/hooks';
@@ -24,11 +24,12 @@ function EditDialog({ playlist, onClose }: { playlist: PlaylistDetail; onClose: 
   const [name, setName] = useState(playlist.name);
   const [description, setDescription] = useState(playlist.description ?? '');
   const [visibility, setVisibility] = useState<Visibility>(playlist.visibility);
+  const [collaborative, setCollaborative] = useState(playlist.collaborative);
   const [error, setError] = useState<string | null>(null);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     try {
-      await api.updatePlaylist(playlist.id, playlist.version, { name: name.trim(), description, visibility });
+      await api.updatePlaylist(playlist.id, playlist.version, { name: name.trim(), description, visibility, collaborative });
       await client.invalidateQueries({ queryKey: keys.playlist(playlist.id) });
       await client.invalidateQueries({ queryKey: keys.playlists });
       toast('Playlist updated');
@@ -56,6 +57,13 @@ function EditDialog({ playlist, onClose }: { playlist: PlaylistDetail; onClose: 
           <input type="checkbox" checked={visibility === 'PUBLIC'} onChange={(e) => setVisibility(e.target.checked ? 'PUBLIC' : 'PRIVATE')} />
           Public: anyone can find it in search
         </label>
+        <label className="check">
+          <input type="checkbox" checked={collaborative} onChange={(e) => setCollaborative(e.target.checked)} />
+          Collaborative: people you invite can add, remove and reorder songs
+        </label>
+        {playlist.collaborative && !collaborative && playlist.collaboratorCount > 0 && (
+          <p className="faint" style={{ margin: 0, fontSize: 13 }}>Turning this off removes {plural(playlist.collaboratorCount, 'collaborator')}.</p>
+        )}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button type="button" className="btn btn-quiet" onClick={onClose}>Cancel</button>
           <button type="submit" className="btn btn-primary" disabled={!name.trim()}>Save</button>
@@ -74,7 +82,31 @@ export function PlaylistPage() {
   const { profile } = useAuth();
   const { queue, isPlaying } = usePlayer();
   const player = usePlayerActions();
-  const playlist = useQuery({ queryKey: keys.playlist(id), queryFn: () => api.playlist(id) });
+  const [search, setSearch] = useSearchParams();
+  const invite = search.get('invite');
+  // opening an invite link joins the playlist first (it may be private until then), then shows it
+  const joining = useQuery({
+    queryKey: ['playlist-join', id, invite],
+    queryFn: async () => {
+      try {
+        await api.joinPlaylist(id, invite!);
+        await client.invalidateQueries({ queryKey: keys.playlists });
+        return true;
+      } catch (e) {
+        toast(e instanceof ApiError && e.code === 'invalid-invite' ? 'This invite link is no longer valid' : 'Could not join', true);
+        return false;
+      }
+    },
+    enabled: !!invite,
+    staleTime: Infinity,
+  });
+  useEffect(() => {
+    if (joining.data === true) {
+      toast('You can now add and arrange songs in this playlist');
+      setSearch({}, { replace: true });
+    }
+  }, [joining.data]); // eslint-disable-line react-hooks/exhaustive-deps
+  const playlist = useQuery({ queryKey: keys.playlist(id), queryFn: () => api.playlist(id), enabled: !invite || joining.isFetched });
   const [editing, setEditing] = useState(false);
   const [menu, setMenu] = useState(false);
   const [dragFrom, setDragFrom] = useState<number | null>(null);
@@ -83,7 +115,8 @@ export function PlaylistPage() {
   if (playlist.isPending) return <PageSkeleton />;
   if (playlist.isError) return <LoadError what="playlist" error={playlist.error} />;
   const p = playlist.data;
-  const owner = p.ownerId === profile?.id;
+  const owner = p.role === 'OWNER';
+  const canEdit = p.role !== 'LISTENER';
   const items = p.tracks.items.filter((i) => i.track);
   const playable = items.filter((i) => i.playable).map((i) => i.track!);
   const context: QueueContext = { source: 'PLAYLIST', sourceId: p.id, label: p.name, href: `/playlist/${p.id}` };
@@ -117,6 +150,24 @@ export function PlaylistPage() {
       toast('Could not reorder', true);
     }
   };
+  const copyInvite = async () => {
+    setMenu(false);
+    try {
+      const { inviteToken } = await api.playlistInvite(p.id);
+      const link = `${window.location.origin}/playlist/${p.id}?invite=${encodeURIComponent(inviteToken)}`;
+      await navigator.clipboard.writeText(link);
+      toast('Invite link copied: anyone with it can edit this playlist');
+    } catch {
+      toast('Could not create an invite link', true);
+    }
+  };
+  const leave = async () => {
+    setMenu(false);
+    if (!profile || !window.confirm(`Leave “${p.name}”? You won’t be able to edit it anymore.`)) return;
+    await api.leavePlaylist(p.id, profile.id);
+    await client.invalidateQueries({ queryKey: keys.playlists });
+    navigate('/');
+  };
   const deletePlaylist = async () => {
     setMenu(false);
     if (!window.confirm(`Delete “${p.name}”? This can’t be undone.`)) return;
@@ -131,12 +182,15 @@ export function PlaylistPage() {
       <header className="hero">
         <Artwork seed={p.id} title={p.name} src={p.coverUrl} className="hero-art" />
         <div className="hero-body">
-          <div className="eyebrow">{p.visibility === 'PUBLIC' ? 'Public playlist' : 'Private playlist'}</div>
+          <div className="eyebrow">
+            {p.collaborative ? 'Collaborative playlist' : p.visibility === 'PUBLIC' ? 'Public playlist' : 'Private playlist'}
+          </div>
           <h1 className={`hero-title${p.name.length > 22 ? ' long' : ''}`} style={owner ? { cursor: 'pointer' } : undefined}
               onClick={() => owner && setEditing(true)}>{p.name}</h1>
           {p.description && <p className="muted" style={{ margin: '-6px 0 12px' }}>{p.description}</p>}
           <div className="hero-meta">
             <strong>{owner ? profile?.displayName : p.ownerName ?? 'Cadence listener'}</strong>
+            {p.collaboratorCount > 0 && <span className="dot">{plural(p.collaboratorCount, 'collaborator')}</span>}
             <span className="dot">{plural(p.trackCount, 'song')}{total > 0 ? `, ${longDuration(total)}` : ''}</span>
           </div>
         </div>
@@ -148,15 +202,17 @@ export function PlaylistPage() {
                   onClick={() => (active ? player.togglePlay() : player.playTracks(playable, 0, context))}>
             {active && isPlaying ? <PauseIcon /> : <PlayIcon />}
           </button>
-          {owner && (
+          {canEdit && (
             <div style={{ position: 'relative' }}>
               <button type="button" className="icon-btn" aria-label="Playlist options" onClick={() => setMenu((m) => !m)}>
                 <MoreIcon width={26} height={26} />
               </button>
               {menu && (
                 <div className="menu" style={{ left: 0, right: 'auto' }} role="menu">
-                  <button role="menuitem" onClick={() => { setMenu(false); setEditing(true); }}>Edit details</button>
-                  <button role="menuitem" onClick={deletePlaylist}>Delete playlist</button>
+                  {owner && <button role="menuitem" onClick={() => { setMenu(false); setEditing(true); }}>Edit details</button>}
+                  {owner && p.collaborative && <button role="menuitem" onClick={() => void copyInvite()}>Copy invite link</button>}
+                  {owner && <button role="menuitem" onClick={deletePlaylist}>Delete playlist</button>}
+                  {!owner && <button role="menuitem" onClick={() => void leave()}>Leave playlist</button>}
                 </div>
               )}
             </div>
@@ -174,8 +230,8 @@ export function PlaylistPage() {
               items={items.map((i) => ({ track: i.track!, playable: i.playable, extra: <span className="faint">{relativeDate(i.addedAt)}</span> }))}
               context={context}
               extraHeader="Date added"
-              onRemove={owner ? remove : undefined}
-              rowProps={owner ? (index) => ({
+              onRemove={canEdit ? remove : undefined}
+              rowProps={canEdit ? (index) => ({
                 draggable: true,
                 onDragStart: () => setDragFrom(index),
                 onDragOver: (e: ReactDragEvent) => { e.preventDefault(); setDragOver(index); },

@@ -113,6 +113,11 @@ cadence:
   streaming:
     manifest-url-ttl: 5m
     segment-url-ttl: 5m
+    free-plan:                      # spec 4 / D96
+      skips-per-window: 6           # 6 skips in any rolling hour; the 7th is 429
+      skip-window: 1h
+      ad-every: 3                   # every 3rd playback start carries an ad slot placeholder
+      ad-slot-duration: 5s
   web:
     # browser origins allowed by CORS (spec 6): Vite dev server, Vite preview, the web container
     allowed-origins: ${CADENCE_WEB_ORIGINS:http://localhost:5173,http://localhost:4173,http://localhost:3000}

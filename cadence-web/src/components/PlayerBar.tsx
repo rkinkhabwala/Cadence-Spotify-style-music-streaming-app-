@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { clock } from '../lib/format';
 import { usePlayer, usePlayerActions, usePlayerProgress } from '../player/PlayerProvider';
@@ -26,8 +26,23 @@ function Progress() {
   );
 }
 
+/** Free plan ad slot placeholder (D96): there is no ad content, just a short break before the track. */
+function AdBreak({ until }: { until: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(timer);
+  }, []);
+  const seconds = Math.max(0, Math.ceil((until - now) / 1000));
+  return (
+    <div className="ad-break ellipsis" role="status">
+      Ad break · your track starts in {seconds} s · Premium has no ads
+    </div>
+  );
+}
+
 export function PlayerBar({ queueOpen, onToggleQueue }: { queueOpen: boolean; onToggleQueue: () => void }) {
-  const { current, isPlaying, isLoading, queue, volume, muted, error } = usePlayer();
+  const { current, isPlaying, isLoading, queue, volume, muted, error, adBreakUntil } = usePlayer();
   const player = usePlayerActions();
   const repeatLabel = queue.repeat === 'off' ? 'Enable repeat' : queue.repeat === 'all' ? 'Enable repeat one' : 'Disable repeat';
   const VolumeGlyph = muted || volume === 0 ? MuteIcon : volume < 0.5 ? VolumeLowIcon : VolumeIcon;
@@ -44,6 +59,7 @@ export function PlayerBar({ queueOpen, onToggleQueue }: { queueOpen: boolean; on
               </div>
               <div className="now-artists"><Artists track={current} /></div>
               {error && <div className="field-error ellipsis" role="alert">{error}</div>}
+              {adBreakUntil && <AdBreak until={adBreakUntil} />}
             </div>
             <LikeButton trackId={current.id} />
           </>

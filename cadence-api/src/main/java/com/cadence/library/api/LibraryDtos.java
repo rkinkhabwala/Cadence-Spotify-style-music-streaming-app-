@@ -38,6 +38,12 @@ final class LibraryDtos {
     record RemoveTracks(@NotEmpty @Size(max = 100) List<@NotNull UUID> trackIds) {
     }
 
+    record JoinPlaylist(@NotBlank @Size(max = 64) String inviteToken) {
+    }
+
+    record Invite(String inviteToken) {
+    }
+
     record Reorder(@NotNull UUID trackId, UUID afterTrackId) {
     }
 }

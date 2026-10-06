@@ -1,7 +1,7 @@
 import { CSRF_HEADER, request } from './client';
 import type {
   AdminTrack, AlbumDetail, AlbumView, ArtistDetail, FollowedArtist, Home, LikedTrack, Page, PlaybackStart, PlaylistDetail,
-  PlaylistView, PlaySource, PlayView, Profile, RecentlyPlayedItem, SavedAlbum, SearchResults, Suggestion, Tokens,
+  PlaylistView, PlaySource, PlayView, Profile, RecentlyPlayedItem, SavedAlbum, SearchResults, SkipResult, Suggestion, Tokens,
   TopTrackItem, TrackStatus, UploadUrl, Visibility,
 } from './types';
 
@@ -49,14 +49,22 @@ export const api = {
 
   // streaming
   startPlayback: (trackId: string) => request<PlaybackStart>(`/playback/${trackId}`, { method: 'POST' }),
+  skip: (trackId: string, playId: string) =>
+    request<SkipResult>(`/playback/${trackId}/skip`, { method: 'POST', body: { playId } }),
 
   // library
   myPlaylists: () => request<Page<PlaylistView>>('/me/playlists?limit=100'),
   playlist: (id: string, cursor?: string) => request<PlaylistDetail>(`/playlists/${id}${q({ limit: 100, cursor })}`),
   createPlaylist: (name: string, visibility: Visibility = 'PRIVATE') =>
     request<PlaylistView>('/playlists', { method: 'POST', body: { name, visibility } }),
-  updatePlaylist: (id: string, version: number, body: { name?: string; description?: string; visibility?: Visibility }) =>
+  updatePlaylist: (id: string, version: number,
+    body: { name?: string; description?: string; visibility?: Visibility; collaborative?: boolean }) =>
     request<PlaylistView>(`/playlists/${id}`, { method: 'PATCH', body, headers: ifMatch(version) }),
+  playlistInvite: (id: string) => request<{ inviteToken: string }>(`/playlists/${id}/invite`, { method: 'POST' }),
+  joinPlaylist: (id: string, inviteToken: string) =>
+    request<PlaylistView>(`/playlists/${id}/collaborators`, { method: 'POST', body: { inviteToken } }),
+  leavePlaylist: (id: string, userId: string) =>
+    request<void>(`/playlists/${id}/collaborators/${userId}`, { method: 'DELETE' }),
   deletePlaylist: (id: string) => request<void>(`/playlists/${id}`, { method: 'DELETE' }),
   addToPlaylist: (id: string, trackIds: string[]) =>
     request<PlaylistView>(`/playlists/${id}/tracks`, { method: 'POST', body: { trackIds } }),

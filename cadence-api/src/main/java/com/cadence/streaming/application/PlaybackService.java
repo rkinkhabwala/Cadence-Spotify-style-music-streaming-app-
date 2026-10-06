@@ -5,11 +5,15 @@ import com.cadence.catalog.TrackSummary;
 import com.cadence.common.error.CadenceException;
 import com.cadence.common.error.ConflictException;
 import com.cadence.common.error.NotFoundException;
+import com.cadence.common.error.TooManyRequestsException;
 import com.cadence.common.storage.ObjectStorage;
 import com.cadence.events.HlsLayout;
+import com.cadence.events.UuidV7;
 import com.cadence.identity.Plan;
 import com.cadence.identity.UserAccounts;
 import com.cadence.streaming.domain.HlsPlaylists;
+import com.cadence.streaming.infrastructure.FreePlanLimits;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
@@ -33,7 +37,17 @@ public class PlaybackService {
     static final int FREE_MAX_KBPS = 160;
     static final int PREMIUM_MAX_KBPS = 320;
 
-    public record PlaybackStart(String manifestUrl, Instant expiresAt, Integer durationMs) {
+    /** {@code adSlot}: set for free users every few tracks (D96); the client plays it before the track. */
+    public record PlaybackStart(String manifestUrl, Instant expiresAt, Integer durationMs,
+                                @JsonInclude(JsonInclude.Include.NON_NULL) AdSlot adSlot) {
+    }
+
+    /** Placeholder for an ad break: no ad content exists, the client shows a card for {@code durationMs}. */
+    public record AdSlot(String type, long durationMs) {
+    }
+
+    /** {@code remaining}: skips left in the rolling window, or null for Premium (unlimited). */
+    public record SkipResult(Integer remaining, int limit) {
     }
 
     private final CatalogQueries catalog;
@@ -41,10 +55,12 @@ public class PlaybackService {
     private final ObjectStorage storage;
     private final PlaybackTokens tokens;
     private final StreamingProperties properties;
+    private final FreePlanLimits freePlan;
     private final Clock clock;
 
     PlaybackService(CatalogQueries catalog, UserAccounts accounts, ObjectStorage storage, PlaybackTokens tokens,
-                    StreamingProperties properties, Clock clock) {
+                    StreamingProperties properties, FreePlanLimits freePlan, Clock clock) {
+        this.freePlan = freePlan;
         this.catalog = catalog;
         this.accounts = accounts;
         this.storage = storage;
@@ -55,13 +71,38 @@ public class PlaybackService {
 
     public PlaybackStart start(UUID userId, UUID trackId, String baseUrl) {
         TrackSummary track = playableTrack(trackId);
-        int maxKbps = accounts.planOf(userId).orElse(Plan.FREE) == Plan.PREMIUM ? PREMIUM_MAX_KBPS : FREE_MAX_KBPS;
+        boolean premium = accounts.planOf(userId).orElse(Plan.FREE) == Plan.PREMIUM;
+        int maxKbps = premium ? PREMIUM_MAX_KBPS : FREE_MAX_KBPS;
         Instant now = clock.instant();
         Instant expiresAt = now.plus(properties.manifestUrlTtl());
         String token = tokens.mint(new PlaybackTokens.Grant(userId, trackId, maxKbps,
                 track.durationMs() == null ? 0 : track.durationMs(), PlaybackTokens.MASTER, expiresAt), now);
         String url = baseUrl + "/api/v1/playback/" + trackId + "/" + HlsLayout.MASTER + "?token=" + encode(token);
-        return new PlaybackStart(url, expiresAt, track.durationMs());
+        StreamingProperties.FreePlan rules = properties.freePlan();
+        AdSlot adSlot = !premium && freePlan.adDue(userId, rules.adEvery())
+                ? new AdSlot("placeholder", rules.adSlotDuration().toMillis()) : null;
+        return new PlaybackStart(url, expiresAt, track.durationMs(), adSlot);
+    }
+
+    /**
+     * A user-initiated skip of the playing track (spec 4: free users get 6 per hour). Premium is unlimited and nothing
+     * is recorded. A retried request with the same {@code playId} doesn't count twice.
+     *
+     * @throws TooManyRequestsException ({@code skip-limit-reached}) with {@code Retry-After} on the 7th skip in an hour
+     */
+    public SkipResult skip(UUID userId, UUID trackId, UUID playId) {
+        StreamingProperties.FreePlan rules = properties.freePlan();
+        if (accounts.planOf(userId).orElse(Plan.FREE) == Plan.PREMIUM) {
+            return new SkipResult(null, rules.skipsPerWindow());
+        }
+        String skipId = playId != null ? playId.toString() : trackId + ":" + UuidV7.generate();
+        FreePlanLimits.SkipDecision decision = freePlan.skip(userId, skipId, rules.skipsPerWindow(), rules.skipWindow(),
+                clock.instant());
+        if (!decision.allowed()) {
+            throw new TooManyRequestsException("skip-limit-reached", "Free plan: " + rules.skipsPerWindow()
+                    + " skips per hour. Upgrade to Premium for unlimited skips.", decision.retryAfter().toSeconds());
+        }
+        return new SkipResult(decision.remaining(), rules.skipsPerWindow());
     }
 
     /** Master playlist with only the renditions the grant allows; variant URIs carry a media-scoped token. */

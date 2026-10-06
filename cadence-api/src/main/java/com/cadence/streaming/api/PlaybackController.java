@@ -4,6 +4,7 @@ import com.cadence.common.security.CurrentUser;
 import com.cadence.common.web.ApiPaths;
 import com.cadence.streaming.application.PlaybackService;
 import com.cadence.streaming.application.PlaybackService.PlaybackStart;
+import com.cadence.streaming.application.PlaybackService.SkipResult;
 import com.cadence.streaming.application.StreamService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -16,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -43,11 +45,25 @@ class PlaybackController {
 
     @PostMapping("/playback/{trackId}")
     @Operation(summary = "Start playback of a READY track",
-            description = "Returns a manifest URL valid for 5 minutes. Free users get at most 160 kbps renditions. "
-                    + "Safe to repeat (each call issues a fresh URL).")
+            description = "Returns a manifest URL valid for 5 minutes. Free users get at most 160 kbps renditions, and "
+                    + "every third start carries an adSlot placeholder to play first. Safe to repeat (each call issues "
+                    + "a fresh URL).")
     PlaybackStart start(CurrentUser user, @PathVariable UUID trackId) {
         String baseUrl = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
         return playback.start(user.id(), trackId, baseUrl);
+    }
+
+    /** @param playId the playback being skipped; makes a retried request count once */
+    record SkipRequest(UUID playId) {
+    }
+
+    @PostMapping("/playback/{trackId}/skip")
+    @Operation(summary = "Ask to skip the playing track (free plan: 6 skips per rolling hour)",
+            description = "Call before a user-initiated skip. 429 skip-limit-reached with Retry-After when the free "
+                    + "plan's skips are used up. Idempotent per playId; without playId every call counts. Premium: "
+                    + "always allowed, remaining = null.")
+    SkipResult skip(CurrentUser user, @PathVariable UUID trackId, @RequestBody(required = false) SkipRequest body) {
+        return playback.skip(user.id(), trackId, body == null ? null : body.playId());
     }
 
     @GetMapping("/playback/{trackId}/master.m3u8")

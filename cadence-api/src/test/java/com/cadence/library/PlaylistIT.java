@@ -168,12 +168,12 @@ class PlaylistIT extends IntegrationTest {
             }
         }
 
-        long succeeded = statuses.stream().filter(s -> s == HttpStatus.OK).count();
-        assertThat(statuses).allMatch(s -> s == HttpStatus.OK || s == HttpStatus.CONFLICT);
+        // without If-Match, a request that loses the race is retried on the server (D95): every add succeeds
+        assertThat(statuses).containsOnly(HttpStatus.OK);
         JsonNode body = api.get("/api/v1/playlists/" + playlist + "?limit=100", owner.accessToken()).getBody();
-        assertThat(body.get("trackCount").asLong()).isEqualTo(succeeded);
-        assertThat(body.at("/tracks/items").size()).isEqualTo((int) succeeded);
-        assertThat(body.get("version").asLong()).isEqualTo(succeeded);
+        assertThat(body.get("trackCount").asLong()).isEqualTo(8);
+        assertThat(body.at("/tracks/items").size()).isEqualTo(8);
+        assertThat(body.get("version").asLong()).isEqualTo(8);
     }
 
     @Test

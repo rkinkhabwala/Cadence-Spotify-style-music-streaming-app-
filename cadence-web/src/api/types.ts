@@ -100,8 +100,13 @@ export interface PlaylistItem {
   addedAt: string;
 }
 
+/** `role`: the caller's (D94). OWNER and COLLABORATOR may edit tracks; only the OWNER manages the playlist. */
+export type PlaylistRole = 'OWNER' | 'COLLABORATOR' | 'LISTENER';
+
 export interface PlaylistDetail extends PlaylistView {
   ownerName: string | null;
+  role: PlaylistRole;
+  collaboratorCount: number;
   tracks: Page<PlaylistItem>;
 }
 
@@ -140,6 +145,14 @@ export interface PlaybackStart {
   manifestUrl: string;
   expiresAt: string;
   durationMs: number | null;
+  /** Free plan: an ad break placeholder to show before the track (D96). */
+  adSlot?: { type: string; durationMs: number };
+}
+
+/** `remaining` is null for Premium (unlimited skips). */
+export interface SkipResult {
+  remaining: number | null;
+  limit: number;
 }
 
 export type PlaySource = 'PLAYLIST' | 'ALBUM' | 'SEARCH' | 'RADIO' | 'ARTIST' | 'LIBRARY' | 'OTHER';
@@ -256,4 +269,6 @@ export interface Problem {
   detail?: string;
   code?: string;
   errors?: { field: string; message: string }[];
+  /** From the `Retry-After` header of a 429, in seconds. */
+  retryAfter?: number;
 }

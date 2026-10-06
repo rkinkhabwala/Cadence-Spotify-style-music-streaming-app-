@@ -2,6 +2,7 @@ import { createContext, use, useCallback, useEffect, useMemo, useReducer, useRef
 import { api } from '../api/endpoints';
 import { ApiError } from '../api/client';
 import type { TrackSummary } from '../api/types';
+import { useToast } from '../components/Toasts';
 import { AudioEngine } from './engine';
 import * as Queue from './queue';
 import { PlayTracker } from './tracker';
@@ -57,6 +58,8 @@ export interface PlayerState {
   error: string | null;
   volume: number;
   muted: boolean;
+  /** Free plan: an ad break placeholder is showing until this time (epoch ms); the track starts after it (D96). */
+  adBreakUntil: number | null;
 }
 
 export interface PlayerActions {
@@ -126,7 +129,11 @@ export function PlayerProvider({ children, engine: injected }: { children: React
     return Number.isFinite(stored) && stored > 0 && stored <= 1 ? stored : 0.8;
   });
   const [muted, setMuted] = useState(false);
+  const [adBreakUntil, setAdBreakUntil] = useState<number | null>(null);
+  const toast = useToast();
   const tracker = useRef<PlayTracker | null>(null);
+  const endedRef = useRef(false);
+  endedRef.current = model.ended;
   const loadSerial = useRef(0);
   const current = model.queue.current;
 
@@ -187,10 +194,30 @@ export function PlayerProvider({ children, engine: injected }: { children: React
     setProgress({ position: 0, duration: (current.track.durationMs ?? 0) / 1000, buffered: 0 });
 
     let attempts = 0;
+    let adTimer: ReturnType<typeof setTimeout> | undefined;
+    setAdBreakUntil(null);
     const start = (startAt: number) => {
       api.startPlayback(current.track.id).then((playback) => {
         if (serial !== loadSerial.current) return;
-        engine.load(playback.manifestUrl, (reason) => {
+        // free plan: the ad slot placeholder plays first (not on the silent restart after expired segment URLs)
+        if (playback.adSlot && attempts === 0 && startAt === 0) {
+          engine.stop();
+          setAdBreakUntil(Date.now() + playback.adSlot.durationMs);
+          adTimer = setTimeout(() => {
+            if (serial !== loadSerial.current) return;
+            setAdBreakUntil(null);
+            play(playback.manifestUrl, startAt);
+          }, playback.adSlot.durationMs);
+          return;
+        }
+        play(playback.manifestUrl, startAt);
+      }).catch((e: unknown) => {
+        if (serial !== loadSerial.current) return;
+        fail(e instanceof ApiError ? e.message : 'Could not start playback');
+      });
+    };
+    const play = (manifestUrl: string, startAt: number) => {
+        engine.load(manifestUrl, (reason) => {
           // segment URLs expire with the session: get a fresh manifest once and resume where we were
           if (serial === loadSerial.current && attempts++ < 1) start(engine.audio.currentTime);
           else if (serial === loadSerial.current) fail(`Playback failed (${reason})`);
@@ -200,10 +227,6 @@ export function PlayerProvider({ children, engine: injected }: { children: React
             setLoading(false); // autoplay blocked until the user presses play
           }
         });
-      }).catch((e: unknown) => {
-        if (serial !== loadSerial.current) return;
-        fail(e instanceof ApiError ? e.message : 'Could not start playback');
-      });
     };
     const fail = (message: string) => {
       setError(message);
@@ -211,6 +234,7 @@ export function PlayerProvider({ children, engine: injected }: { children: React
       setPlaying(false);
     };
     start(0);
+    return () => clearTimeout(adTimer);
   }, [current?.serial]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -234,6 +258,28 @@ export function PlayerProvider({ children, engine: injected }: { children: React
 
   const actions = useMemo<PlayerActions>(() => {
     const moveOn = () => tracker.current?.finish(false);
+    /**
+     * A user-initiated skip of a playing track asks the API first: free users get 6 per hour (D96), Premium is always
+     * allowed. Only a 429 stops the skip; any other failure lets it through (the server is the only authority).
+     */
+    const skipThen = (go: () => void) => {
+      const playing = tracker.current;
+      const track = model.queue.current?.track;
+      if (!playing || !track || endedRef.current) {
+        go();
+        return;
+      }
+      api.skip(track.id, playing.playId).then(go, (e: unknown) => {
+        if (e instanceof ApiError && e.status === 429) {
+          const minutes = Math.max(1, Math.ceil((e.problem.retryAfter ?? 60) / 60));
+          toast(e.code === 'skip-limit-reached'
+            ? `You're out of skips for now (free plan: 6 per hour). Next skip in ${minutes} min.`
+            : e.message, true);
+        } else {
+          go();
+        }
+      });
+    };
     return {
       playTracks: (tracks, index, context) => {
         const playable = playableOnly(tracks);
@@ -249,10 +295,10 @@ export function PlayerProvider({ children, engine: injected }: { children: React
         if (audio.paused) engine.play().catch(() => undefined);
         else engine.pause();
       },
-      next: () => {
+      next: () => skipThen(() => {
         moveOn();
         dispatch({ type: 'next', auto: false });
-      },
+      }),
       previous: () => {
         if (engine.audio.currentTime > 3) {
           engine.seek(0);
@@ -283,7 +329,7 @@ export function PlayerProvider({ children, engine: injected }: { children: React
         dispatch({ type: 'reset' });
       },
     };
-  }, [engine]);
+  }, [engine, model.queue.current, toast]);
 
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
@@ -302,8 +348,8 @@ export function PlayerProvider({ children, engine: injected }: { children: React
   }, [actions]);
 
   const state = useMemo<PlayerState>(() => ({
-    queue: model.queue, current: current?.track ?? null, isPlaying, isLoading, error, volume, muted,
-  }), [model.queue, current, isPlaying, isLoading, error, volume, muted]);
+    queue: model.queue, current: current?.track ?? null, isPlaying, isLoading, error, volume, muted, adBreakUntil,
+  }), [model.queue, current, isPlaying, isLoading, error, volume, muted, adBreakUntil]);
 
   return (
     <ActionsContext value={actions}>

@@ -484,3 +484,67 @@ refresh with only the cookie returns `{accessToken, expiresIn, tokenType}`, refr
 client is verified against the stub of its actual contract, and the fallback is the default.
 
 **Assumptions:** D87–D92.
+
+## Slice 3.2 — Free vs Premium and collaborative playlists
+
+**Plan**
+- Free plan (spec 4, D96):
+  - Bitrate cap (already enforced since 1.4, D39).
+  - `POST /playback/{trackId}/skip`: a rolling 6 skips per hour, enforced by a Redis sorted set + Lua script;
+    idempotent per `playId`; the 7th is 429 `skip-limit-reached` with `Retry-After`; Premium unlimited.
+  - `adSlot` placeholder on every 3rd playback start of a free user.
+- Collaborative playlists (D94):
+  - Migration `V7__library_playlist_collaborators.sql` (`playlist_collaborators`, `playlists.invite_token`).
+  - Roles OWNER / COLLABORATOR / LISTENER.
+  - Owner-managed invite link: `POST/DELETE /playlists/{id}/invite`.
+  - Join with the token: `POST /playlists/{id}/collaborators`. List and remove/leave:
+    `GET /playlists/{id}/collaborators`, `DELETE /playlists/{id}/collaborators/{userId}`.
+  - Collaborators add/remove/reorder tracks. `/me/playlists` includes joined playlists, and the detail carries the
+    caller's `role`.
+- Optimistic locking + automatic retry (D95): track changes without `If-Match` re-run in a fresh transaction (up to 10
+  attempts, jittered back-off) when they lose the race; with `If-Match` the client still gets 412.
+- Web:
+  - Free skips go through the skip endpoint (toast on 429); ad slot card before the track.
+  - Collaborative toggle, copy invite link, join banner, editing for collaborators.
+- Tests: `Playlist` role unit tests; `CollaborativePlaylistIT` (invite/join/roles/leave/revoke, 2 collaborators × 10
+  concurrent adds + reorders with no lost writes and no errors, `If-Match` still 412); `FreePlanIT` (7th skip → 429
+  with Retry-After, idempotent per playId, Premium unlimited, ad slot every 3rd start for free users only, 320 kbps
+  refused for free users); web tests for the skip guard and the ad slot.
+
+**Built**
+- Migration `V7__library_playlist_collaborators.sql`.
+- `library`:
+  - `Playlist` roles (OWNER/COLLABORATOR/LISTENER), invite token (create/revoke/constant-time check)
+  - `PlaylistCollaborator` + repository
+  - `PlaylistService`: invite/join/list/remove/leave, `/me/playlists` incl. joined playlists, `role` +
+    `collaboratorCount` on the detail, track changes run through a `TransactionTemplate` retry loop (D95)
+  - `PlaylistController` endpoints
+- `streaming`:
+  - `FreePlanLimits` (rolling-hour skip window as a Redis sorted set + Lua; ad counter; fail-open)
+  - `POST /playback/{trackId}/skip`
+  - `adSlot` on `PlaybackStart`
+  - `cadence.streaming.free-plan.*`
+- `cadence-web`:
+  - user-initiated "next" asks the skip endpoint first (toast with minutes left on 429)
+  - "Ad break" line in the player bar before the track
+  - `Retry-After` on `ApiError`
+  - playlist page: Collaborative switch, Copy invite link, auto-join from the link, Leave, editing for collaborators
+
+**Tests: 264 passing, 0 skipped** (+15).
+- Unit: `PlaylistTest` (3): roles, editor/owner checks, invite lifecycle.
+- `CollaborativePlaylistIT` (5):
+  - invite → join (wrong token 403, idempotent) → collaborator adds/reorders/removes but can't rename, delete or invite
+  - `/me/playlists` and the collaborator list
+  - public listeners read-only
+  - revoke, leave, remove, turning collaboration off
+  - **AC5:** 2 collaborators × 10 concurrent adds then 10 concurrent moves: all 200, 20 tracks, 10 per user, version +30
+  - stale `If-Match` still 412
+- `FreePlanIT` (4):
+  - **AC4:** the 7th skip in an hour → 429 `skip-limit-reached`, `Retry-After` ≈ 3,600 s; a retried playId isn't counted
+  - the window rolls (old skips expire, `Retry-After` from the oldest in-window skip)
+  - Premium unlimited, 401 unauthenticated
+  - ad slot on every 3rd free start only
+- `PlaylistIT`: 8 concurrent adds now all succeed (server-side retry). Web: `FreePlan.test` (3): refused skip keeps the
+  track with a toast, allowed skip moves on, ad slot delays the load.
+
+**Assumptions:** D93–D96.

@@ -7,9 +7,12 @@ import com.cadence.common.web.ApiPaths;
 import com.cadence.common.web.ETags;
 import com.cadence.library.api.LibraryDtos.AddTracks;
 import com.cadence.library.api.LibraryDtos.CreatePlaylist;
+import com.cadence.library.api.LibraryDtos.Invite;
+import com.cadence.library.api.LibraryDtos.JoinPlaylist;
 import com.cadence.library.api.LibraryDtos.RemoveTracks;
 import com.cadence.library.api.LibraryDtos.Reorder;
 import com.cadence.library.api.LibraryDtos.UpdatePlaylist;
+import com.cadence.library.application.LibraryViews.CollaboratorView;
 import com.cadence.library.application.LibraryViews.PlaylistDetail;
 import com.cadence.library.application.LibraryViews.PlaylistView;
 import com.cadence.library.application.PlaylistService;
@@ -51,7 +54,7 @@ class PlaylistController {
     }
 
     @GetMapping("/me/playlists")
-    @Operation(summary = "The caller's playlists, newest first")
+    @Operation(summary = "Playlists the caller owns or collaborates on, newest first")
     CursorPage<PlaylistView> mine(CurrentUser user, @RequestParam(required = false) Integer limit,
                                   @RequestParam(required = false) String cursor) {
         return playlists.mine(user.id(), CursorRequest.of(limit, cursor));
@@ -92,7 +95,9 @@ class PlaylistController {
     }
 
     @PostMapping("/playlists/{id}/tracks")
-    @Operation(summary = "Add READY tracks at a 0-based position (default: end); tracks already present are skipped")
+    @Operation(summary = "Add READY tracks at a 0-based position (default: end); tracks already present are skipped",
+            description = "Owner and collaborators. Without If-Match a concurrent edit is retried automatically; with "
+                    + "If-Match a stale version is 412.")
     ResponseEntity<PlaylistView> addTracks(CurrentUser user, @PathVariable UUID id,
                                            @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
                                            @Valid @RequestBody AddTracks body) {
@@ -113,6 +118,43 @@ class PlaylistController {
                                          @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
                                          @Valid @RequestBody Reorder body) {
         return withETag(playlists.reorder(user.id(), id, ETags.parseIfMatch(ifMatch), body.trackId(), body.afterTrackId()));
+    }
+
+    // ---- collaborators (D94) ----
+
+    @PostMapping("/playlists/{id}/invite")
+    @Operation(summary = "Get the invite link token of a collaborative playlist (owner only; idempotent)",
+            description = "Anyone who has the token can join as a collaborator. 409 not-collaborative unless the "
+                    + "playlist is collaborative.")
+    Invite invite(CurrentUser user, @PathVariable UUID id) {
+        return new Invite(playlists.invite(user.id(), id));
+    }
+
+    @DeleteMapping("/playlists/{id}/invite")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Revoke the invite link (owner only; idempotent); collaborators who joined stay")
+    void revokeInvite(CurrentUser user, @PathVariable UUID id) {
+        playlists.revokeInvite(user.id(), id);
+    }
+
+    @PostMapping("/playlists/{id}/collaborators")
+    @Operation(summary = "Join a collaborative playlist with its invite token (idempotent)",
+            description = "403 invalid-invite for a wrong or revoked token.")
+    PlaylistView join(CurrentUser user, @PathVariable UUID id, @Valid @RequestBody JoinPlaylist body) {
+        return playlists.join(user.id(), id, body.inviteToken());
+    }
+
+    @GetMapping("/playlists/{id}/collaborators")
+    @Operation(summary = "Collaborators, in joining order (owner and collaborators only); not paginated (max 50)")
+    CursorPage<CollaboratorView> collaborators(CurrentUser user, @PathVariable UUID id) {
+        return new CursorPage<>(playlists.collaborators(user.id(), id), null);
+    }
+
+    @DeleteMapping("/playlists/{id}/collaborators/{userId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Remove a collaborator (owner), or leave (the collaborator themselves); idempotent")
+    void removeCollaborator(CurrentUser user, @PathVariable UUID id, @PathVariable UUID userId) {
+        playlists.removeCollaborator(user.id(), id, userId);
     }
 
     private static ResponseEntity<PlaylistView> withETag(PlaylistView view) {
