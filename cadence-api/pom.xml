@@ -107,6 +107,15 @@
             <groupId>org.springframework.modulith</groupId>
             <artifactId>spring-modulith-api</artifactId>
         </dependency>
+        <!-- observability (spec 7, D98): Prometheus scrape endpoint, trace ids in logs -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing-bridge-otel</artifactId>
+        </dependency>
         <!-- recommender client (spec 3.5): circuit breaker and its Micrometer metrics -->
         <dependency>
             <groupId>io.github.resilience4j</groupId>

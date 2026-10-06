@@ -9,7 +9,7 @@ contract with the external recommender.
 
 ## Status
 
-**Phase 1 (core backend and playback) is complete** (slices 1.1–1.6). **Phase 2 (search, activity, web client) is complete**: slices 2.1–2.3. **Phase 3** is in progress: slices 3.1 (recommender integration) and 3.2 (free vs Premium, collaborative playlists) are done. What works now:
+**Phase 1 (core backend and playback) is complete** (slices 1.1–1.6). **Phase 2 (search, activity, web client) is complete**: slices 2.1–2.3. **Phase 3 (recommender integration and Premium rules) is complete**: slices 3.1–3.3. What works now:
 
 - Multi-module Maven build (`./mvnw`), JDK 21, virtual threads.
 - `cadence-api` boots. It has Flyway (outbox + processed-event tables), `/actuator/health`, Swagger UI,
@@ -38,6 +38,12 @@ contract with the external recommender.
   the 7th is 429 with `Retry-After`), and an ad-break placeholder before every 3rd track. Premium has none of these limits.
 - **Collaborative playlists:** the owner turns on "Collaborative" and shares an invite link. Anyone who opens it can
   add, remove and reorder songs. Concurrent edits are retried on the server, so no write is lost.
+- **Rate limiting:** login 5/min per IP, search 30/s per user, and every API call 50/s per user (or per IP when
+  signed out), as RFC 7807 429s with `Retry-After`.
+- **Observability:** `/actuator/prometheus` on both apps, trace ids in every log line (JSON logs in containers), and
+  Prometheus (http://localhost:9090) + Grafana (http://localhost:3001, dashboard "Cadence overview") in `make up`.
+- **Load test:** `make loadtest` runs Gatling with 500 concurrent listeners (login → search → play → like) against the
+  running stack; results are in PROGRESS.md (slice 3.3).
 - **Search:** Elasticsearch indices of artists, albums, READY tracks and public playlists, kept current from
   `catalog.entity-changed` / `library.playlist-changed` events (edits are searchable within about a second).
   `GET /api/v1/search?q=&types=&limit=&cursor=` is fuzzy and prefix-aware and grouped by type;
@@ -110,6 +116,8 @@ playback and navigates through five pages, asserting the same audio element keep
 | MinIO | http://localhost:9000 (S3), http://localhost:9001 (console) | private buckets `cadence-raw`, `cadence-hls`; apps use the least-privilege `cadence-app` user |
 | Elasticsearch 8 | http://localhost:9200 | user `elastic`, password `ELASTIC_PASSWORD` from `.env` |
 | kafka-ui | http://localhost:8090 | |
+| Prometheus | http://localhost:9090 | scrapes api and transcoder |
+| Grafana | http://localhost:3001 | dashboard "Cadence overview"; admin password `GRAFANA_ADMIN_PASSWORD` |
 
 All config comes from environment variables, documented in [`.env.example`](.env.example). Both Compose and
 the Spring apps read `.env`, which is git-ignored.
@@ -144,7 +152,9 @@ cadence-events/        shared EventEnvelope, Topics, UuidV7, Jackson config, JSO
 cadence-api/           com.cadence.{common, identity, catalog, library, streaming, search, activity}
 cadence-transcoder/    Kafka consumer → FFmpeg → MinIO
 cadence-web/           React + TypeScript + Vite + hls.js web client (Maven module via frontend-maven-plugin)
-cadence-e2e/           acceptance tests against the packaged jars (Phase 1 and 2 criteria)
+cadence-e2e/           acceptance tests against the packaged jars (Phase 1, 2 and 3 criteria)
+cadence-loadtest/      Gatling simulation (make loadtest; compiled but not run by ./mvnw verify)
+observability/         Prometheus config, Grafana provisioning and the "Cadence overview" dashboard
 scripts/               toolchains, dev keys, seed.py, verify-player.sh, verify-web.sh
 docker-compose.yml     postgres, redis, kafka, minio (+ bucket init), elasticsearch, kafka-ui on network cadence-net
 ```

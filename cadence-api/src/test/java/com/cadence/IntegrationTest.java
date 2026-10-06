@@ -18,7 +18,9 @@ import org.springframework.test.context.DynamicPropertySource;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "cadence.admin.email=" + ApiClient.ADMIN_EMAIL,
         "cadence.admin.password=" + ApiClient.ADMIN_PASSWORD,
-        "cadence.security.jwt.issuer=cadence"
+        "cadence.security.jwt.issuer=cadence",
+        // fixtures create entities in tight loops; the global API limit itself is tested by RateLimitIT
+        "cadence.rate-limits.api.capacity=1000000"
 })
 @Import(TestcontainersConfiguration.class)
 public abstract class IntegrationTest {

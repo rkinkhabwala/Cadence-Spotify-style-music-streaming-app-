@@ -548,3 +548,77 @@ client is verified against the stub of its actual contract, and the fallback is 
   track with a toast, allowed skip moves on, ad slot delays the load.
 
 **Assumptions:** D93–D96.
+
+## Slice 3.3 — Rate limiting, observability, load test and Phase 3 acceptance
+
+**Plan**
+- Rate limiting (D97): a global per-user (per-IP when anonymous) token bucket on every `/api/**` request, in the
+  security filter chain after authentication, as an RFC 7807 429 with `Retry-After`. Fails open, like login/search.
+- Observability (D98):
+  - Prometheus registry on `/actuator/prometheus` (API and transcoder); latency histograms for HTTP requests.
+  - Micrometer tracing (trace/span ids in every log line), structured ECS JSON logs in the containers.
+  - `cadence.outbox.pending` gauge.
+  - Compose `prometheus` + `grafana` with a provisioned "Cadence" dashboard: RED per endpoint, playback-start p95,
+    recommender outcomes and circuit state, recommendations by source, outbox backlog, Kafka consumer lag,
+    JVM/Hikari.
+- Load test (D99): `cadence-loadtest` module, Gatling Java DSL.
+  - Scenario: login → home → search suggest → play (POST /playback, master, variant, first segment) → play report
+    → like.
+  - 500 concurrent listeners against the running stack (`make loadtest`), not part of `verify`.
+  - Assertions: < 1 % failed, p95 playback start < 200 ms.
+- `cadence-e2e` `Phase3AcceptanceIT`: AC1–AC5 against the packaged jars, with the recommender as a WireMock process
+  that is stopped for AC3. AC6 is the Gatling run, whose report is recorded here.
+- Tests: `RateLimitIT`; `ObservabilityIT` (prometheus endpoint, histogram, custom metrics, trace id in logs).
+
+**Built**
+- `common.ratelimit.ApiRateLimitFilter`: global per-user/per-IP bucket (`cadence.rate-limits.api`, 50/s), in the
+  security chain after bearer auth. RFC 7807 429 with `Retry-After`; preflights, `/actuator` and token-authorized HLS
+  playlists are exempt.
+- Observability:
+  - Prometheus registry + `micrometer-tracing-bridge-otel` in the API and transcoder; `/actuator/prometheus`
+    (permitAll); HTTP latency histograms; `application` tag; `common.outbox.OutboxMetrics` (`cadence.outbox.pending`)
+  - ECS JSON logs in the containers
+  - Compose `prometheus` (v3.15.0) and `grafana` (13.0.10, :3001, anonymous Viewer, `GRAFANA_ADMIN_PASSWORD`), part
+    of `make up`
+  - `observability/` with the scrape config, provisioning and the "Cadence overview" dashboard
+- `cadence-loadtest` (Gatling 3.16, Netty 4.2 BOM override): `ListenerSimulation`, `Setup`, `make loadtest`.
+  Dockerfiles copy the new module POM.
+- `cadence-e2e`: `CadenceStack.start(extraApiArgs)`, WireMock dependency, `Phase3AcceptanceIT`.
+
+**Found by the load test and fixed:** the first 500-listener run had 553 KOs, all 429s on the HLS master/variant
+playlists. Those requests carry no bearer token, so the new global limiter keyed them by client IP, and every
+listener behind the Docker NAT shared one bucket (real listeners behind a shared NAT would hit the same). Playlists
+are now exempt; they can only be reached through the per-user-limited `POST /playback`, and `RateLimitIT` covers it.
+
+**Load test (spec 9 Phase 3 AC6)**, `make loadtest`, run on 2026-10-05 against the Compose `app` containers on this
+laptop, with Gatling on the same machine:
+- 500 concurrent listeners: 60 s ramp + 180 s steady.
+- **98,396 requests, 0 failed (0.00 %)**, 335 req/s; global p50 4 ms, p95 66 ms, p99 346 ms.
+
+| Request | p50 | p95 | p99 | max (ms) |
+|---|---|---|---|---|
+| **playback start** (`POST /playback`) | 5 | **47** | 174 | 836 |
+| master / variant playlist | 3 / 3 | 10 / 8 | 19 / 17 | 258 / 57 |
+| first segment (MinIO) | 2 | 7 | 18 | 64 |
+| search suggest / search | 4 / 9 | 16 / 57 | 37 / 188 | 239 / 705 |
+| play report / like | 5 / 3 | 57 / 48 | 196 / 167 | 692 / 611 |
+| home (2 recommendation shelves via fallback) | 28 | 332 | 711 | 1,558 |
+| login (BCrypt 12) | 328 | 482 | 646 | 1,518 |
+
+Gatling assertions: failed < 1 % → **true** (0.0); playback start p95 < 200 ms → **true** (47 ms). Prometheus agreed
+on the server side: playback-start p95 40 ms over the run. The outbox backlog peaked at 72 events, and 12,045
+recommendation lists were served from the fallback (recommender disabled).
+
+**Tests: 273 passing, 0 skipped** (+9; the Gatling run is separate).
+- `RateLimitIT` (2, own context with 8/min): per-user buckets and the 9th call → 429 with `Retry-After`; anonymous
+  per-IP buckets; actuator and HLS playlists not limited.
+- `ObservabilityIT` (2, `@AutoConfigureObservability`): Prometheus exposes HTTP histograms, the outbox gauge,
+  recommendation/recommender metrics, breaker state, Hikari and JVM metrics; log lines carry `[traceId-spanId]`.
+- `Phase3AcceptanceIT` (5) against the packaged jars, with the recommender as a WireMock server:
+  - AC1: a play reaches `activity.track-played` < 2 s and maps to a valid recommender `play_end`
+  - AC2: 22 plays → ≥ 20 recommendations, none liked, all READY
+  - AC3: the recommender stopped → 8 new users get fallback recommendations and home, all 200
+  - AC4: a free master lists no 320k, the 320k variant → 403 `bitrate-not-allowed`, the 7th skip → 429
+  - AC5: 2 collaborators × 20 concurrent adds → all 200, 20 tracks
+
+**Assumptions:** D97–D99.

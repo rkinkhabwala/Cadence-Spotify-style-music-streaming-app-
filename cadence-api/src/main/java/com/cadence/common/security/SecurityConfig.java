@@ -1,5 +1,7 @@
 package com.cadence.common.security;
 
+import com.cadence.common.ratelimit.ApiRateLimitFilter;
+import com.cadence.common.ratelimit.RateLimiter;
 import com.cadence.common.web.ApiPaths;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
@@ -14,6 +16,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -37,6 +40,7 @@ class SecurityConfig {
 
     @Bean
     SecurityFilterChain apiSecurity(HttpSecurity http, JwtDecoder jwtDecoder, ObjectMapper objectMapper,
+                                    RateLimiter rateLimiter,
                                     @Value("${cadence.web.allowed-origins}") List<String> webOrigins) throws Exception {
         ProblemSecurityHandlers problems = new ProblemSecurityHandlers(objectMapper);
         http
@@ -63,6 +67,8 @@ class SecurityConfig {
                         .requestMatchers(V1 + "/admin/**").hasRole("ADMIN")
                         // ops and docs
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
+                        // scraped by the local Prometheus (D98); Compose binds the API to 127.0.0.1 only
+                        .requestMatchers(HttpMethod.GET, "/actuator/prometheus").permitAll()
                         .requestMatchers("/v3/api-docs", "/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**").permitAll()
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated())
@@ -70,7 +76,8 @@ class SecurityConfig {
                         .jwt(jwt -> jwt.decoder(jwtDecoder).jwtAuthenticationConverter(authenticationConverter()))
                         .authenticationEntryPoint(problems)
                         .accessDeniedHandler(problems))
-                .exceptionHandling(e -> e.authenticationEntryPoint(problems).accessDeniedHandler(problems));
+                .exceptionHandling(e -> e.authenticationEntryPoint(problems).accessDeniedHandler(problems))
+                .addFilterAfter(new ApiRateLimitFilter(rateLimiter, objectMapper), BearerTokenAuthenticationFilter.class);
         return http.build();
     }
 

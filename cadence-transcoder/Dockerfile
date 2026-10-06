@@ -10,6 +10,7 @@ COPY cadence-api/pom.xml cadence-api/
 COPY cadence-transcoder/pom.xml cadence-transcoder/
 COPY cadence-e2e/pom.xml cadence-e2e/
 COPY cadence-web/pom.xml cadence-web/
+COPY cadence-loadtest/pom.xml cadence-loadtest/
 RUN --mount=type=cache,target=/root/.m2 mvn -B -q -pl cadence-transcoder -am dependency:go-offline || true
 COPY cadence-events/src cadence-events/src
 COPY cadence-transcoder/src cadence-transcoder/src

@@ -35,7 +35,18 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      # latency histograms for p95/p99 in Prometheus (spec 7: playback start < 200 ms p95)
+      percentiles-histogram:
+        http.server.requests: true
+  tracing:
+    # trace and span ids are in every log line whatever the sampling; spans are only exported if an exporter is added
+    sampling:
+      probability: ${CADENCE_TRACING_SAMPLING:0.1}
   endpoint:
     health:
       probes:

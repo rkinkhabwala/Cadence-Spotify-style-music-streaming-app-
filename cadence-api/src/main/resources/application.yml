@@ -66,7 +66,18 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      # latency histograms for p95/p99 in Prometheus (spec 7: playback start < 200 ms p95)
+      percentiles-histogram:
+        http.server.requests: true
+  tracing:
+    # trace and span ids are in every log line whatever the sampling; spans are only exported if an exporter is added
+    sampling:
+      probability: ${CADENCE_TRACING_SAMPLING:0.1}
   endpoint:
     health:
       probes:
@@ -97,6 +108,9 @@ cadence:
     search:              # spec 6: 30/s per user (search and suggest share it)
       capacity: 30
       period: 1s
+    api:                 # D97: every /api request, per user (per client IP when anonymous)
+      capacity: ${CADENCE_RATE_LIMIT_API_CAPACITY:50}
+      period: ${CADENCE_RATE_LIMIT_API_PERIOD:1s}
   s3:
     # endpoint the API talks to; public-endpoint is what browsers/players see in presigned URLs
     endpoint: ${CADENCE_S3_ENDPOINT:http://localhost:9000}

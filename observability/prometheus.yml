@@ -1,0 +1,16 @@
+# Scrapes Cadence (D98): the Compose "app" profile containers on cadence-net.
+# For apps started on the host (make run-api / run-transcoder) use host.docker.internal:8080 / :8081 instead; don't
+# list both, because the published container ports answer on host.docker.internal too and every series would double.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: cadence-api
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["api:8080"]
+  - job_name: cadence-transcoder
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["transcoder:8081"]

@@ -54,7 +54,10 @@ final class CadenceStack implements AutoCloseable {
     private final List<Process> processes = new ArrayList<>();
     private final Path logs;
 
-    private CadenceStack() throws Exception {
+    private final List<String> extraApiArgs;
+
+    private CadenceStack(List<String> extraApiArgs) throws Exception {
+        this.extraApiArgs = extraApiArgs;
         signingKeys = generateKeys();
         apiPort = freePort();
         logs = Path.of(System.getProperty("cadence.e2e.logs", "target/e2e-logs"));
@@ -62,7 +65,12 @@ final class CadenceStack implements AutoCloseable {
     }
 
     static CadenceStack start() throws Exception {
-        CadenceStack stack = new CadenceStack();
+        return start(List.of());
+    }
+
+    /** @param extraApiArgs additional command-line properties for the API process */
+    static CadenceStack start(List<String> extraApiArgs) throws Exception {
+        CadenceStack stack = new CadenceStack(extraApiArgs);
         try {
             Startables.deepStart(stack.postgres, stack.kafka, stack.redis, stack.minio, stack.elasticsearch).join();
             stack.startApps();
@@ -112,7 +120,9 @@ final class CadenceStack implements AutoCloseable {
                 "--cadence.security.jwt.public-key-location=file:" + publicKey,
                 "--cadence.admin.email=" + ADMIN_EMAIL,
                 "--cadence.admin.password=" + ADMIN_PASSWORD,
-                "--cadence.outbox.poll-interval=200ms"));
+                "--cadence.outbox.poll-interval=200ms",
+                // the suites upload catalogs in tight loops as admin; the limit itself is covered by RateLimitIT
+                "--cadence.rate-limits.api.capacity=1000000"), extraApiArgs);
         awaitHealthy("api", apiPort);
 
         launch("transcoder", System.getProperty("cadence.transcoder.jar"), work, List.of(
@@ -123,6 +133,12 @@ final class CadenceStack implements AutoCloseable {
                 "--cadence.s3.secret-key=" + minio.getPassword(),
                 "--cadence.transcoder.work-dir=" + work.resolve("transcoder")));
         awaitHealthy("transcoder", transcoderPort);
+    }
+
+    private void launch(String name, String jar, Path workDir, List<String> args, List<String> extra) throws IOException {
+        List<String> all = new ArrayList<>(args);
+        all.addAll(extra);
+        launch(name, jar, workDir, all);
     }
 
     private void launch(String name, String jar, Path workDir, List<String> args) throws IOException {

@@ -4,9 +4,9 @@ SHELL := /bin/bash
 JAVA_HOME := $(shell ./scripts/setup-toolchains.sh --print 2>/dev/null)
 export JAVA_HOME
 COMPOSE := docker compose
-INFRA := postgres redis kafka minio elasticsearch kafka-ui
+INFRA := postgres redis kafka minio elasticsearch kafka-ui prometheus grafana
 
-.PHONY: help env keys toolchains up app app-down down logs ps seed test build run-api run-transcoder web web-verify clean
+.PHONY: help env keys toolchains up app app-down down logs ps seed test build run-api run-transcoder web web-verify loadtest clean
 
 help: ## Show targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-16s %s\n", $$1, $$2}'
@@ -20,7 +20,7 @@ keys: ## Generate the dev RS256 JWT key pair in secrets/ (never committed)
 toolchains: ## Register JDK 21 in ~/.m2/toolchains.xml (once per machine)
 	./scripts/setup-toolchains.sh
 
-up: env ## Start infrastructure (postgres, redis, kafka, minio, elasticsearch, kafka-ui) and wait until healthy
+up: env ## Start infrastructure (postgres, redis, kafka, minio, elasticsearch, kafka-ui, prometheus, grafana)
 	$(COMPOSE) up -d --wait $(INFRA)
 	$(COMPOSE) up --no-log-prefix --exit-code-from minio-init minio-init
 
@@ -59,6 +59,11 @@ web: ## Run the web client dev server on http://localhost:5173 (needs the API on
 
 web-verify: ## Browser check: plays a track in the real web client and navigates without interrupting it
 	./scripts/verify-web.sh
+
+loadtest: ## Gatling: 500 concurrent listeners against the running, seeded stack (USERS=, STEADY= to override)
+	set -a; source .env; set +a; \
+	LOADTEST_USERS=$${USERS:-500} LOADTEST_STEADY_SECONDS=$${STEADY:-180} \
+	./mvnw -B -pl cadence-loadtest gatling:test
 
 clean: ## Remove build output
 	./mvnw -B -q clean
